@@ -1,0 +1,161 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NEXUS: one free, open source app for your whole PC</title>
+    <meta
+      name="description"
+      content="NEXUS is a free, open source Windows app for everyone. Switch accounts, set up a new PC, clear temp files, and manage tasks, disks and updates in one place."
+    />
+    <meta property="og:title" content="NEXUS: one free, open source app for your whole PC" />
+    <meta
+      property="og:description"
+      content="Switch game accounts, set up a new PC, clear temp files, and manage tasks, disks and updates in one place."
+    />
+    <meta property="og:image" content="https://opensourceguyatnexus.github.io/NEXUS/assets/shots/dashboard.png" />
+    <link rel="icon" type="image/svg+xml" href="assets/nexus-logo.svg" />
+    <link rel="preload" href="assets/fonts/oxanium-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="site.css" />
+    <script type="importmap">
+      { "imports": { "three": "./vendor/three.module.js" } }
+    </script>
+    <script type="module" src="site.js"></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="top">
+      <a class="brand" href="#main">
+        <img src="assets/nexus-mark.svg" alt="" width="30" height="30" />
+        <span>NEXUS</span>
+      </a>
+      <nav aria-label="Main">
+        <a href="#accounts">Features</a>
+        <a href="demo/">Demo</a>
+        <a href="https://github.com/opensourceguyatnexus/NEXUS">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="hero">
+        <div class="hero-copy">
+          <h1>One app for your whole PC.</h1>
+          <p>
+            Free and open source. Switch accounts in one click, set up a new PC from one file,
+            and clear out the junk filling your drive.
+          </p>
+          <div class="actions">
+            <a class="btn primary" href="https://github.com/opensourceguyatnexus/NEXUS/releases/latest">Download for Windows</a>
+            <a class="btn" href="demo/">Try the demo</a>
+          </div>
+        </div>
+        <div class="hero-chip" id="chip">
+          <img class="chip-fallback" src="assets/nexus-mark.svg" alt="The NEXUS logo: a heavy N with one cut corner" />
+        </div>
+      </section>
+
+      <section class="showcase" aria-label="The NEXUS dashboard">
+        <img
+          src="assets/shots/dashboard.png"
+          width="1280"
+          height="800"
+          alt="The NEXUS dashboard, showing live CPU, GPU, memory and drive readings wired to a central chip"
+        />
+      </section>
+
+      <section class="feature" id="accounts">
+        <div class="copy">
+          <h2>Change accounts without typing a password</h2>
+          <p>
+            Sign in once, save the account, and switch whenever you want. NEXUS closes the
+            launcher, swaps the login, and opens it again.
+          </p>
+          <ul>
+            <li>Steam, Riot Games, Discord, Epic Games and Ubisoft Connect</li>
+            <li>Opens the right profile in Chrome, Edge, Brave or Firefox</li>
+            <li>Passwords are never stored, and saved logins stay on your PC</li>
+            <li>Won't switch while VALORANT, League or a Steam game is running</li>
+          </ul>
+        </div>
+        <img src="assets/shots/accounts.png" width="1280" height="800" loading="lazy" alt="The Account Switcher page, listing saved Steam, Riot and Discord accounts with a Switch button beside each" />
+      </section>
+
+      <section class="feature flip" id="setup">
+        <div class="copy">
+          <h2>Set up a new PC with one file</h2>
+          <p>
+            Tick the apps you always install and export one installer. Run it on the new PC and
+            it installs each app through winget, showing progress as it goes.
+          </p>
+          <ul>
+            <li>Browsers, launchers, voice chat and everyday tools</li>
+            <li>Keep the file on a USB drive and reuse it on every PC</li>
+            <li>Runtimes finds the Visual C++ and .NET packages games ask for</li>
+          </ul>
+        </div>
+        <img src="assets/shots/setup.png" width="1280" height="800" loading="lazy" alt="The New PC Setup page, with a list of apps to tick and an Export installer button" />
+      </section>
+
+      <section class="feature" id="disks">
+        <div class="copy">
+          <h2>See your drives, and change them carefully</h2>
+          <p>
+            Every disk is drawn to scale. Shrink a partition by the amount you want to free, or
+            create, rename, format and delete, with guards on anything risky.
+          </p>
+          <ul>
+            <li>Windows, EFI and Recovery partitions are protected</li>
+            <li>Format and delete ask you to type the word to confirm</li>
+            <li>Stops if the disks changed since the page loaded</li>
+          </ul>
+        </div>
+        <img src="assets/shots/disks.png" width="1280" height="800" loading="lazy" alt="The Disk Manager page, drawing each disk as a bar of its partitions and free space" />
+      </section>
+
+      <section class="tools" aria-labelledby="tools-title">
+        <h2 id="tools-title">Everything else in the box</h2>
+        <dl>
+          <div><dt>Temp file cleaner</dt><dd>See what you can free before anything is deleted. Files still in use are left alone.</dd></div>
+          <div><dt>Task Manager</dt><dd>End a whole app at once. Core Windows processes can't be ended by accident.</dd></div>
+          <div><dt>Update Center</dt><dd>See which apps are out of date, then update one or all of them.</dd></div>
+          <div><dt>Startup Manager</dt><dd>Turn off the programs that slow down your boot.</dd></div>
+          <div><dt>System Monitor</dt><dd>CPU, memory and disks live, plus GPU stats on NVIDIA cards.</dd></div>
+          <div><dt>Applications</dt><dd>Your mouse, RGB and benchmark tools, found and launched from one list.</dd></div>
+        </dl>
+      </section>
+
+      <section class="open" id="open-source">
+        <h2>Open source, for everyone</h2>
+        <p>
+          NEXUS is free and made to help anyone with a Windows PC, whether you game or not. All
+          of the code is public, so you can read exactly what it does and change it.
+        </p>
+        <p>
+          Anyone can contribute. Report a bug, suggest an idea, test a launcher, improve the
+          docs, or send code. You don't need to be a programmer to help.
+        </p>
+        <div class="actions">
+          <a class="btn primary" href="https://github.com/opensourceguyatnexus/NEXUS/blob/main/CONTRIBUTING.md">Start contributing</a>
+          <a class="btn" href="https://github.com/opensourceguyatnexus/NEXUS/issues/new">Report a bug</a>
+        </div>
+      </section>
+
+      <section class="get" id="download">
+        <h2>Get NEXUS</h2>
+        <p>
+          For Windows 10 and 11. Download it and run it, with nothing to sign up for and no telemetry.
+          NEXUS isn't code-signed yet, so Windows may show a SmartScreen warning the first time.
+        </p>
+        <div class="actions">
+          <a class="btn primary" href="https://github.com/opensourceguyatnexus/NEXUS/releases/latest">Download for Windows</a>
+          <a class="btn" href="https://github.com/opensourceguyatnexus/NEXUS">View the source</a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>NEXUS is open source under the <a href="https://github.com/opensourceguyatnexus/NEXUS/blob/main/LICENSE">MIT License</a>.</span>
+    </footer>
+  </body>
+</html>

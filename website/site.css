@@ -1,0 +1,352 @@
+/* The NEXUS site shares the app's tokens: black surfaces, thin grey borders and one
+   blue accent. The one loud thing is the 3D logo; the rest stays quiet. */
+
+@font-face {
+  font-family: "Oxanium";
+  src: url("assets/fonts/oxanium-latin-wght-normal.woff2") format("woff2-variations");
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+:root {
+  --mask: #141414;
+  --mask-deep: #0d0d0d;
+  --line: #303030;
+  --line-strong: #434343;
+  --accent: #1668c7;
+  --accent-hover: #1259ab;
+  --accent-text: #58a6f0;
+  --silk: #e8e8e8;
+  --dim: #b3b3b3;
+  --page: min(1180px, 100% - 48px);
+  --display: "Oxanium", "Segoe UI", sans-serif;
+  --body: "Segoe UI", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--mask);
+  color: var(--silk);
+  font: 400 1.0625rem/1.6 var(--body);
+  -webkit-font-smoothing: antialiased;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+a {
+  color: inherit;
+}
+
+a:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 3px;
+}
+
+.skip {
+  position: absolute;
+  left: -999px;
+  top: 8px;
+  padding: 8px 14px;
+  background: var(--accent);
+  color: #fff;
+  z-index: 10;
+}
+.skip:focus {
+  left: 8px;
+}
+
+h1,
+h2 {
+  font-family: var(--display);
+  margin: 0;
+}
+
+/* Header */
+.top {
+  width: var(--page);
+  margin: 0 auto;
+  padding: 20px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.25rem;
+  letter-spacing: 0.06em;
+  text-decoration: none;
+}
+.top nav {
+  display: flex;
+  gap: 24px;
+}
+.top nav a {
+  color: var(--dim);
+  text-decoration: none;
+  padding: 10px 0;
+}
+.top nav a:hover {
+  color: var(--silk);
+  text-decoration: underline;
+  text-decoration-color: var(--accent-text);
+  text-underline-offset: 6px;
+}
+
+/* Hero */
+.hero {
+  width: var(--page);
+  margin: 0 auto;
+  padding: 40px 0 72px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 32px;
+}
+.hero h1 {
+  font-size: clamp(3rem, 7.2vw, 6.25rem);
+  font-weight: 700;
+  line-height: 0.98;
+  max-width: 11ch;
+}
+.hero p {
+  max-width: 46ch;
+  margin: 24px 0 32px;
+  color: var(--dim);
+  font-size: 1.1875rem;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 10px 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+.btn:hover {
+  border-color: var(--silk);
+}
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn.primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.hero-chip {
+  position: relative;
+  aspect-ratio: 1;
+  width: 100%;
+  max-width: 480px;
+  justify-self: end;
+}
+.hero-chip canvas {
+  position: absolute;
+  inset: -12%;
+  width: 124% !important;
+  height: 124% !important;
+  opacity: 0;
+  transition: opacity 500ms ease;
+}
+.chip-fallback {
+  width: 76%;
+  margin: 12%;
+  transition: opacity 500ms ease;
+}
+.hero-chip.live canvas {
+  opacity: 1;
+}
+.hero-chip.live .chip-fallback {
+  opacity: 0;
+}
+
+/* Product shot, sitting on the seam between the hero and the page */
+.showcase {
+  width: var(--page);
+  margin: 0 auto;
+}
+.showcase img,
+.feature img {
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+
+/* Features */
+.feature {
+  width: var(--page);
+  margin: 0 auto;
+  padding: 104px 0 0;
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  align-items: center;
+  gap: 56px;
+}
+.feature.flip .copy {
+  order: 2;
+}
+.feature h2,
+.tools h2,
+.open h2,
+.get h2 {
+  font-size: clamp(2rem, 3.4vw, 2.875rem);
+  font-weight: 650;
+  line-height: 1.08;
+}
+.feature p {
+  margin: 16px 0;
+  color: var(--dim);
+}
+.feature ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.feature li {
+  position: relative;
+  padding: 8px 0 8px 20px;
+  border-top: 1px solid var(--line);
+}
+/* A small blue square marks each point. */
+.feature li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 18px;
+  width: 7px;
+  height: 7px;
+  background: var(--accent-text);
+}
+
+/* Everything else: one darker band. */
+.tools {
+  margin-top: 120px;
+  padding: 88px max(24px, calc((100% - 1180px) / 2));
+  background: var(--mask-deep);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.tools dl {
+  margin: 40px 0 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 40px;
+}
+.tools dl > div {
+  padding: 18px 0 24px;
+  border-top: 1px solid var(--line);
+}
+.tools dt {
+  font-family: var(--display);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+.tools dd {
+  margin: 6px 0 0;
+  color: var(--dim);
+}
+
+/* Open source and download */
+.open,
+.get {
+  width: var(--page);
+  margin: 0 auto;
+  padding: 104px 0 0;
+}
+.get {
+  padding-bottom: 104px;
+}
+.open p,
+.get p {
+  max-width: 60ch;
+  margin: 16px 0 0;
+  color: var(--dim);
+}
+.open .actions,
+.get .actions {
+  margin-top: 28px;
+}
+
+footer {
+  width: var(--page);
+  margin: 0 auto;
+  padding: 24px 0 40px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 24px;
+  border-top: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 0.875rem;
+}
+
+@media (max-width: 900px) {
+  .hero {
+    grid-template-columns: 1fr;
+    padding: 24px 0 48px;
+  }
+  .hero-chip {
+    max-width: 280px;
+    justify-self: start;
+    order: -1;
+  }
+  .feature,
+  .feature.flip {
+    grid-template-columns: 1fr;
+    gap: 28px;
+    padding-top: 72px;
+  }
+  .feature.flip .copy {
+    order: 0;
+  }
+  .tools {
+    margin-top: 80px;
+    padding-top: 64px;
+    padding-bottom: 64px;
+  }
+  .tools dl {
+    grid-template-columns: 1fr;
+  }
+  .open,
+  .get {
+    padding-top: 72px;
+  }
+  .get {
+    padding-bottom: 72px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  * {
+    transition-duration: 1ms !important;
+  }
+}

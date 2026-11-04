@@ -1,0 +1,102 @@
+// Startup Manager: list programs that run at sign-in and toggle the user-scope
+// ones on or off. System-wide entries are shown read-only (they need admin).
+
+import { useEffect, useState } from "react";
+import { Power } from "lucide-react";
+import { api } from "../api";
+import type { StartupItem } from "../types";
+import { useNexus } from "../state";
+import { Loading, ErrorBanner, EmptyState } from "../components/ui";
+
+export function Startup() {
+  const { setNotice } = useNexus();
+  const [items, setItems] = useState<StartupItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = async () => {
+    setError(null);
+    try {
+      setItems(await api.getStartup());
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const toggle = async (it: StartupItem) => {
+    const key = `${it.source}:${it.name}`;
+    setBusy(key);
+    try {
+      await api.setStartupEnabled(it.source, it.name, !it.enabled);
+      await load();
+      setNotice(`${it.name} ${!it.enabled ? "enabled" : "disabled"} at startup.`);
+    } catch (e) {
+      setNotice(`Could not change ${it.name}: ${e}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (!items && !error) return <Loading label="Reading startup programs" />;
+
+  const enabledCount = items?.filter((i) => i.enabled).length ?? 0;
+
+  return (
+    <div>
+      <div className="page-head">
+        <h1>Startup Manager</h1>
+        <p>Choose which programs run when you sign in. Fewer means a faster boot.</p>
+      </div>
+
+      {error && <ErrorBanner message={error} />}
+
+      <div className="note-banner">
+        <Power size={16} />
+        <span>
+          {enabledCount} of {items?.length ?? 0} startup programs are enabled. System-wide
+          entries are read-only here because changing them needs administrator rights.
+        </span>
+      </div>
+
+      {items && items.length === 0 ? (
+        <EmptyState title="No startup programs found" hint="Nothing is set to run at sign-in." />
+      ) : (
+        <div>
+          {items?.map((it) => {
+            const key = `${it.source}:${it.name}`;
+            return (
+              <div className="row" key={key}>
+                <span className="meta">
+                  <span className="name">{it.name}</span>
+                  <span className="path">{it.command}</span>
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  <span className="badge">{it.location}</span>
+                  {it.can_toggle ? (
+                    <label className="switch" title={it.enabled ? "Disable" : "Enable"}>
+                      <input
+                        type="checkbox"
+                        checked={it.enabled}
+                        disabled={busy === key}
+                        onChange={() => toggle(it)}
+                      />
+                      <span className="track" />
+                    </label>
+                  ) : (
+                    <span className="badge off" title="Needs administrator rights">
+                      {it.enabled ? "On" : "Off"} · locked
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,286 @@
+// The curated catalog of hardware utilities NEXUS knows about.
+// URLs point at official vendor pages only. Detection rules are intentionally
+// conservative: a match means "this software looks installed", not "your exact
+// device is fully supported". The UI surfaces the compatibility note for that.
+
+use crate::models::CatalogApp;
+
+fn app(
+    id: &str,
+    name: &str,
+    vendor: &str,
+    category: &str,
+    description: &str,
+    download_url: &str,
+    compatibility: &str,
+    registry_names: &[&str],
+    paths: &[&str],
+    exe_names: &[&str],
+) -> CatalogApp {
+    CatalogApp {
+        id: id.into(),
+        name: name.into(),
+        vendor: vendor.into(),
+        category: category.into(),
+        description: description.into(),
+        download_url: download_url.into(),
+        compatibility: compatibility.into(),
+        registry_names: registry_names.iter().map(|s| s.to_lowercase()).collect(),
+        paths: paths.iter().map(|s| s.to_string()).collect(),
+        exe_names: exe_names.iter().map(|s| s.to_lowercase()).collect(),
+    }
+}
+
+// Categories used across the app:
+// mouse_keyboard, audio, gpu, motherboard, rgb_cooling
+pub fn catalog() -> Vec<CatalogApp> {
+    vec![
+        // ---- Mouse and Keyboard ----
+        app(
+            "razer-synapse", "Razer Synapse", "Razer", "mouse_keyboard",
+            "Configure Razer mice, keyboards, and other Razer peripherals.",
+            "https://www.razer.com/synapse-new",
+            "Works with supported Razer devices only.",
+            &["razer synapse", "razer central"],
+            &["%ProgramFiles(x86)%\\Razer\\Synapse3\\WPFUI\\Framework\\Razer Synapse 3 Host\\Razer Synapse 3.exe",
+              "%ProgramData%\\Razer\\Synapse3\\Shared\\bin\\RazerCentralService.exe"],
+            &["razer synapse 3.exe", "razercentral.exe"],
+        ),
+        app(
+            "logitech-ghub", "Logitech G HUB", "Logitech", "mouse_keyboard",
+            "Manage Logitech G mice, keyboards, headsets, and lighting.",
+            "https://www.logitechg.com/innovation/g-hub.html",
+            "Supports Logitech G series devices. Also covers some headsets.",
+            &["logitech g hub", "lghub"],
+            &["%ProgramData%\\LGHUB\\lghub.exe", "%LOCALAPPDATA%\\LGHUB\\lghub.exe"],
+            &["lghub.exe"],
+        ),
+        app(
+            "steelseries-gg", "SteelSeries GG", "SteelSeries", "mouse_keyboard",
+            "Engine for SteelSeries mice, keyboards, and headsets, plus Moments and Sonar.",
+            "https://steelseries.com/gg",
+            "Supports SteelSeries devices. Also used for SteelSeries audio.",
+            &["steelseries gg", "steelseries engine"],
+            &["%ProgramFiles%\\SteelSeries\\GG\\SteelSeriesGG.exe"],
+            &["steelseriesgg.exe"],
+        ),
+        app(
+            "corsair-icue", "Corsair iCUE", "Corsair", "mouse_keyboard",
+            "Control Corsair peripherals, RGB lighting, fans, and cooling.",
+            "https://www.corsair.com/us/en/s/icue",
+            "Supports Corsair devices. Also covers Corsair RGB and cooling.",
+            &["icue", "corsair icue"],
+            &["%ProgramFiles%\\Corsair\\CORSAIR iCUE5 Software\\iCUE.exe",
+              "%ProgramFiles(x86)%\\Corsair\\CORSAIR iCUE4 Software\\iCUE.exe"],
+            &["icue.exe"],
+        ),
+        app(
+            "wootility", "Wootility", "Wooting", "mouse_keyboard",
+            "Configure Wooting analog keyboards.",
+            "https://wooting.io/wootility",
+            "Works with Wooting keyboards only.",
+            &["wootility"],
+            &["%LOCALAPPDATA%\\Programs\\wootility-lekker\\Wootility.exe"],
+            &["wootility.exe"],
+        ),
+
+        // ---- Headsets and Audio ----
+        app(
+            "hyperx-ngenuity", "HyperX NGENUITY", "HyperX", "audio",
+            "Tune HyperX headsets, keyboards, and mice, including mic monitoring and EQ.",
+            "https://hyperx.com/pages/ngenuity",
+            "Supports NGENUITY-compatible HyperX devices only. Many older HyperX headsets are not supported.",
+            &["hyperx ngenuity", "ngenuity"],
+            &[],
+            &["ngenuity.exe", "hyperx ngenuity.exe"],
+        ),
+        app(
+            "dolby-access", "Dolby Access", "Dolby", "audio",
+            "Set up and configure Dolby Atmos for headphones and speakers.",
+            "https://www.dolby.com/apps/dolby-access/",
+            "Dolby Atmos for Headphones requires a license. Works system-wide once enabled.",
+            &["dolby access"],
+            &[],
+            &["dolbyaccess.exe"],
+        ),
+        app(
+            "nahimic", "Nahimic", "SteelSeries (Nahimic)", "audio",
+            "Audio enhancement suite bundled with many gaming laptops and motherboards.",
+            "https://www.nahimic.com/",
+            "Usually pre-installed by the PC or motherboard vendor.",
+            &["nahimic"],
+            &[],
+            &["nahimicsvc.exe", "nahimic.exe"],
+        ),
+
+        // ---- GPU and Graphics ----
+        app(
+            "nvidia-app", "NVIDIA App", "NVIDIA", "gpu",
+            "Drivers, game settings, and GPU controls for NVIDIA graphics cards.",
+            "https://www.nvidia.com/en-us/software/nvidia-app/",
+            "For NVIDIA GeForce and RTX GPUs. Replaces GeForce Experience and Control Panel.",
+            &["nvidia app"],
+            &["%ProgramFiles%\\NVIDIA Corporation\\NVIDIA app\\CEF\\NVIDIA app.exe"],
+            &["nvidia app.exe"],
+        ),
+        app(
+            "amd-adrenalin", "AMD Software: Adrenalin Edition", "AMD", "gpu",
+            "Drivers, tuning, and recording for AMD Radeon graphics cards.",
+            "https://www.amd.com/en/products/software/adrenalin.html",
+            "For AMD Radeon GPUs only.",
+            &["amd software", "adrenalin", "radeon software"],
+            &["%ProgramFiles%\\AMD\\CNext\\CNext\\RadeonSoftware.exe"],
+            &["radeonsoftware.exe"],
+        ),
+        app(
+            "msi-afterburner", "MSI Afterburner", "MSI", "gpu",
+            "Overclocking, fan curves, and on-screen monitoring for any GPU.",
+            "https://www.msi.com/Landing/afterburner/graphics-cards",
+            "Works with most GPU brands, not only MSI cards.",
+            &["msi afterburner"],
+            &["%ProgramFiles(x86)%\\MSI Afterburner\\MSIAfterburner.exe"],
+            &["msiafterburner.exe"],
+        ),
+
+        // ---- Motherboards and System Hardware ----
+        app(
+            "gigabyte-control-center", "Gigabyte Control Center", "Gigabyte", "motherboard",
+            "Unified control for Gigabyte and Aorus motherboards and components.",
+            "https://www.gigabyte.com/Support/Utility",
+            "For Gigabyte and Aorus boards that support GCC.",
+            &["gigabyte control center"],
+            &[],
+            &["gcc.exe", "gigabyte control center.exe"],
+        ),
+        app(
+            "msi-center", "MSI Center", "MSI", "motherboard",
+            "System tuning, monitoring, and Mystic Light for MSI boards and laptops.",
+            "https://www.msi.com/Landing/MSI-Center",
+            "For MSI motherboards and laptops.",
+            &["msi center"],
+            &[],
+            &["msi center.exe", "msicenter.exe"],
+        ),
+        app(
+            "armoury-crate", "ASUS Armoury Crate", "ASUS", "motherboard",
+            "Control ASUS and ROG hardware, lighting (Aura Sync), and fan profiles.",
+            "https://www.asus.com/supportonly/armoury%20crate/helpdesk_download/",
+            "For ASUS and ROG boards, laptops, and peripherals.",
+            &["armoury crate"],
+            &[],
+            &["armourycrate.exe"],
+        ),
+
+        // ---- RGB, Fans, and Cooling ----
+        app(
+            "openrgb", "OpenRGB", "OpenRGB", "rgb_cooling",
+            "Vendor-neutral RGB lighting control for a wide range of devices.",
+            "https://openrgb.org/",
+            "Device support varies. Check the OpenRGB supported-devices list.",
+            &["openrgb"],
+            &["%ProgramFiles%\\OpenRGB\\OpenRGB.exe"],
+            &["openrgb.exe"],
+        ),
+        app(
+            "fancontrol", "Fan Control", "Rem0o", "rgb_cooling",
+            "Flexible fan-speed control driven by any available temperature sensor.",
+            "https://getfancontrol.com/",
+            "Works with motherboards and sensors exposed through LibreHardwareMonitor.",
+            &["fan control"],
+            &[],
+            &["fancontrol.exe"],
+        ),
+
+        // ---- Benchmark and Diagnostics ----
+        app(
+            "unigine-heaven", "Unigine Heaven", "Unigine", "benchmark",
+            "Classic GPU stress test and benchmark with tessellation and dynamic sky.",
+            "https://benchmark.unigine.com/heaven",
+            "GPU benchmark. Good for stability and thermal testing.",
+            &["unigine heaven", "heaven benchmark"],
+            &[],
+            &["heaven.exe", "browser_x64.exe"],
+        ),
+        app(
+            "unigine-superposition", "Unigine Superposition", "Unigine", "benchmark",
+            "Modern GPU benchmark and stress test with heavy shaders and VRAM load.",
+            "https://benchmark.unigine.com/superposition",
+            "GPU benchmark. Includes a dedicated stress-test mode.",
+            &["unigine superposition", "superposition benchmark"],
+            &[],
+            &["superposition.exe"],
+        ),
+        app(
+            "cinebench", "Cinebench", "Maxon", "benchmark",
+            "CPU rendering benchmark for single and multi core performance.",
+            "https://www.maxon.net/en/cinebench",
+            "CPU benchmark based on the Cinema 4D render engine.",
+            &["cinebench"],
+            &[],
+            &["cinebench.exe"],
+        ),
+        app(
+            "furmark", "FurMark", "Geeks3D", "benchmark",
+            "Intensive GPU stress test, the classic fur donut, plus a VRAM burner.",
+            "https://geeks3d.com/furmark/",
+            "GPU stress test. Push thermals hard, watch temperatures.",
+            &["furmark"],
+            &[],
+            &["furmark.exe", "furmark_gui.exe"],
+        ),
+        app(
+            "occt", "OCCT", "OCBASE", "benchmark",
+            "Stability and stress testing for CPU, GPU, memory, and power supply.",
+            "https://www.ocbase.com/",
+            "All-in-one stress tester with live sensor readings.",
+            &["occt"],
+            &[],
+            &["occt.exe"],
+        ),
+        app(
+            "crystaldiskmark", "CrystalDiskMark", "Crystal Dew World", "benchmark",
+            "Storage benchmark for sequential and random read and write speeds.",
+            "https://crystalmark.info/en/software/crystaldiskmark/",
+            "Disk and SSD benchmark.",
+            &["crystaldiskmark"],
+            &[],
+            &["crystaldiskmark.exe", "diskmark64.exe"],
+        ),
+        app(
+            "hwinfo", "HWiNFO", "HWiNFO", "benchmark",
+            "Deep hardware monitoring with every available sensor, logging, and reports.",
+            "https://www.hwinfo.com/download/",
+            "Monitoring and diagnostics. Best source for real sensor data.",
+            &["hwinfo"],
+            &[],
+            &["hwinfo64.exe", "hwinfo.exe"],
+        ),
+        app(
+            "cpu-z", "CPU-Z", "CPUID", "benchmark",
+            "Identifies CPU, mainboard, and memory, with a quick CPU benchmark.",
+            "https://www.cpuid.com/softwares/cpu-z.html",
+            "Diagnostics for CPU, board, and RAM.",
+            &["cpu-z"],
+            &[],
+            &["cpuz.exe", "cpuz_x64.exe"],
+        ),
+        app(
+            "gpu-z", "GPU-Z", "TechPowerUp", "benchmark",
+            "Detailed graphics card information, sensors, and BIOS tools.",
+            "https://www.techpowerup.com/gpuz/",
+            "Diagnostics for your GPU.",
+            &["gpu-z"],
+            &[],
+            &["gpu-z.exe"],
+        ),
+        app(
+            "3dmark", "3DMark", "UL Solutions", "benchmark",
+            "The standard suite of gaming benchmarks for GPU and CPU.",
+            "https://www.3dmark.com/",
+            "Gaming benchmark suite. Also available on Steam.",
+            &["3dmark"],
+            &[],
+            &["3dmark.exe"],
+        ),
+    ]
+}
