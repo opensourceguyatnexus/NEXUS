@@ -55,7 +55,7 @@ fn read_start_apps() -> Vec<(String, String)> {
         }
     };
     match value {
-        serde_json::Value::Array(arr) => arr.iter().for_each(|v| push(v)),
+        serde_json::Value::Array(arr) => arr.iter().for_each(&mut push),
         serde_json::Value::Object(_) => push(&value),
         _ => {}
     }
@@ -73,8 +73,8 @@ fn expand_env(input: &str) -> String {
     let bytes = input.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'%' {
-            if let Some(end) = input[i + 1..].find('%') {
+        if bytes[i] == b'%'
+            && let Some(end) = input[i + 1..].find('%') {
                 let name = &input[i + 1..i + 1 + end];
                 match std::env::var(name) {
                     Ok(val) => out.push_str(&val),
@@ -87,7 +87,6 @@ fn expand_env(input: &str) -> String {
                 i = i + 1 + end + 1;
                 continue;
             }
-        }
         out.push(bytes[i] as char);
         i += 1;
     }
@@ -168,11 +167,10 @@ fn search_dir_for_exe(root: &Path, exe_names: &[String], depth: u32) -> Option<S
         let path = entry.path();
         match entry.file_type() {
             Ok(ft) if ft.is_file() => {
-                if let Some(fname) = path.file_name().and_then(|f| f.to_str()) {
-                    if exe_names.contains(&fname.to_lowercase()) {
+                if let Some(fname) = path.file_name().and_then(|f| f.to_str())
+                    && exe_names.contains(&fname.to_lowercase()) {
                         return Some(path.to_string_lossy().to_string());
                     }
-                }
             }
             Ok(ft) if ft.is_dir() => subdirs.push(path),
             _ => {}
@@ -201,11 +199,10 @@ fn resolve_launch_path(
     }
     // App Paths registry by exe name.
     for exe in exe_names {
-        if let Some(full) = app_paths.get(exe) {
-            if Path::new(full).exists() {
+        if let Some(full) = app_paths.get(exe)
+            && Path::new(full).exists() {
                 return Some(full.clone());
             }
-        }
     }
     if let Some(prog) = program {
         // DisplayIcon usually points at the main exe.

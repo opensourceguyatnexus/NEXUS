@@ -21,7 +21,7 @@ import {
 import { api, fmtBytes } from "../api";
 import type { DiskInfo, FreeSpace, PartitionInfo, SupportedSize } from "../types";
 import { useNexus } from "../state";
-import { Loading, ErrorBanner } from "../components/ui";
+import { AdminNote, Loading, ErrorBanner } from "../components/ui";
 import { Modal } from "../components/Modal";
 
 const GB = 1024 ** 3;
@@ -63,7 +63,7 @@ const gb = (bytes: number) => (bytes / GB).toFixed(2);
 const gbDown = (bytes: number) => (Math.floor((bytes / GB) * 100) / 100).toFixed(2);
 
 export function DiskManager() {
-  const { setNotice, elevated, restartAsAdmin } = useNexus();
+  const { setNotice, elevated } = useNexus();
   const [disks, setDisks] = useState<DiskInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sel, setSel] = useState<Selection | null>(null);
@@ -109,7 +109,12 @@ export function DiskManager() {
   if (!disks && !error) return <Loading label="Reading disks" />;
 
   const selPart = sel?.kind === "part" ? sel.part : null;
-  const adminTitle = !elevated ? "Needs administrator rights. Use Restart as admin above." : undefined;
+  // Why a disk's buttons are off, shown as their tooltip.
+  const guard = (disk: { is_offline?: boolean }) => {
+    if (!elevated) return { disabled: true, title: "Needs administrator rights. Use Restart as admin above." };
+    if (disk.is_offline) return { disabled: true, title: "This disk is offline. Bring it online in Windows Disk Management first." };
+    return {};
+  };
 
   return (
     <div>
@@ -125,17 +130,7 @@ export function DiskManager() {
 
       {error && <ErrorBanner message={error} />}
 
-      {!elevated && (
-        <div className="note-banner">
-          <ShieldAlert size={16} />
-          <span style={{ flex: 1 }}>
-            You can view disks now. Changing partitions needs administrator rights.
-          </span>
-          <button className="btn sm" onClick={restartAsAdmin} style={{ flexShrink: 0 }}>
-            Restart as admin
-          </button>
-        </div>
-      )}
+      <AdminNote>You can view disks now. Changing partitions needs administrator rights.</AdminNote>
 
       <div className="note-banner accent">
         <ShieldAlert size={15} />
@@ -229,26 +224,26 @@ export function DiskManager() {
                     ) : (
                       <div className="btn-row" style={{ flexWrap: "wrap" }}>
                         {!sel.part.is_boot && (
-                          <button className="btn sm" disabled={!elevated} title={adminTitle} onClick={() => setOp("letter")}>
+                          <button className="btn sm" {...guard(d)} onClick={() => setOp("letter")}>
                             <Type size={14} /> Letter
                           </button>
                         )}
                         {sel.part.file_system && (
-                          <button className="btn sm" disabled={!elevated} title={adminTitle} onClick={() => setOp("label")}>
+                          <button className="btn sm" {...guard(d)} onClick={() => setOp("label")}>
                             <Tag size={14} /> Label
                           </button>
                         )}
                         {sel.part.resizable && (
-                          <button className="btn sm" disabled={!elevated} title={adminTitle} onClick={() => setOp("resize")}>
+                          <button className="btn sm" {...guard(d)} onClick={() => setOp("resize")}>
                             <MoveHorizontal size={14} /> Extend / Shrink
                           </button>
                         )}
                         {!sel.part.is_boot && (
                           <>
-                            <button className="btn sm" disabled={!elevated} title={adminTitle} onClick={() => setOp("format")}>
+                            <button className="btn sm" {...guard(d)} onClick={() => setOp("format")}>
                               <Eraser size={14} /> Format
                             </button>
-                            <button className="btn danger sm" disabled={!elevated} title={adminTitle} onClick={() => setOp("delete")}>
+                            <button className="btn danger sm" {...guard(d)} onClick={() => setOp("delete")}>
                               <Trash2 size={14} /> Delete
                             </button>
                           </>
@@ -271,7 +266,7 @@ export function DiskManager() {
                           : "This disk is not initialized. Open Windows Disk Management, right-click the disk and choose Initialize Disk, then press Refresh."}
                       </div>
                     ) : (
-                      <button className="btn primary sm" disabled={!elevated} title={adminTitle} onClick={() => setOp("create")}>
+                      <button className="btn primary sm" {...guard(d)} onClick={() => setOp("create")}>
                         <Plus size={14} /> Create partition
                       </button>
                     )}

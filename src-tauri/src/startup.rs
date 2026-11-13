@@ -24,13 +24,11 @@ const APPROVED_FOLDER: &str =
 // Read the enabled flag for one entry name from a StartupApproved subkey.
 // Missing value means the entry is enabled.
 fn approved_enabled(hive: &RegKey, approved_path: &str, name: &str) -> bool {
-    if let Ok(key) = hive.open_subkey(approved_path) {
-        if let Ok(val) = key.get_raw_value(name) {
-            if let Some(first) = val.bytes.first() {
+    if let Ok(key) = hive.open_subkey(approved_path)
+        && let Ok(val) = key.get_raw_value(name)
+            && let Some(first) = val.bytes.first() {
                 return first % 2 == 0; // 0x02 enabled, 0x03 disabled
             }
-        }
-    }
     true
 }
 
@@ -112,7 +110,7 @@ pub fn list_startup(elevated: bool) -> Vec<StartupItem> {
     read_folder(user_startup_dir(), &hkcu, "user_folder", "This user (Startup folder)", true, &mut out);
     read_folder(common_startup_dir(), &hklm, "common_folder", "All users (Startup folder)", elevated, &mut out);
 
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|a| a.name.to_lowercase());
     out
 }
 

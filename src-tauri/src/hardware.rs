@@ -122,8 +122,8 @@ fn query_peripherals(wmi: &WMIConnection) -> Vec<HardwareDevice> {
 }
 
 fn query_os(wmi: &WMIConnection) -> Option<HardwareDevice> {
-    if let Ok(rows) = wmi.query::<Win32OperatingSystem>() {
-        if let Some(r) = rows.into_iter().next() {
+    if let Ok(rows) = wmi.query::<Win32OperatingSystem>()
+        && let Some(r) = rows.into_iter().next() {
             let name = r.caption.unwrap_or_else(|| "Windows".into());
             let detail = r.version.map(|v| format!("version {}", v)).unwrap_or_default();
             return Some(HardwareDevice {
@@ -132,7 +132,6 @@ fn query_os(wmi: &WMIConnection) -> Option<HardwareDevice> {
                 detail,
             });
         }
-    }
     None
 }
 
@@ -176,7 +175,7 @@ pub fn detect_hardware() -> HardwareInfo {
 
     // WMI-backed data. If COM or WMI is not available, degrade gracefully.
     let (wmi_gpus, peripherals, os) = match COMLibrary::new()
-        .and_then(|com| WMIConnection::new(com))
+        .and_then(WMIConnection::new)
     {
         Ok(wmi) => (query_gpus_wmi(&wmi), query_peripherals(&wmi), query_os(&wmi)),
         Err(_) => (Vec::new(), Vec::new(), None),

@@ -18,12 +18,10 @@ import {
   File as FileIcon,
   CornerLeftUp,
   PieChart,
-  Shield,
-  ShieldCheck,
 } from "lucide-react";
 import { api, fmtBytes } from "../api";
 import type { CleanResult, FolderEntry, ScanResult } from "../types";
-import { ErrorBanner, Loading } from "../components/ui";
+import { AdminNote, ErrorBanner, Loading } from "../components/ui";
 import { Modal } from "../components/Modal";
 import { useNexus } from "../state";
 
@@ -39,7 +37,7 @@ const TOOLS = [
 ];
 
 export function Toolkit() {
-  const { openTool, elevated, restartAsAdmin, setNotice } = useNexus();
+  const { openTool, setNotice } = useNexus();
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // Locations the user unticked. A rescan keeps them unticked.
@@ -112,26 +110,20 @@ export function Toolkit() {
 
   // A friendly summary of what the clean actually did.
   const resultMessage = (r: CleanResult): string => {
+    const count = (n: number, one: string, many: string) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+    const kept =
+      r.skipped_files > 0
+        ? ` ${count(r.skipped_files, "file was", "files were")} kept because running programs may still need them.`
+        : "";
     const denied =
       r.denied_files > 0
-        ? ` ${r.denied_files.toLocaleString()} files need administrator rights. Use Restart as admin to clear them.`
+        ? ` ${count(r.denied_files, "file needs", "files need")} administrator rights. Use Restart as admin to clear ${r.denied_files === 1 ? "it" : "them"}.`
         : "";
-    if (r.removed_files === 0 && r.skipped_files > 0) {
-      return (
-        `Nothing could be removed right now. ${r.skipped_files.toLocaleString()} ` +
-        `files are in use or less than a day old, and were skipped to keep running ` +
-        `programs safe. Close other apps and try again later to clear more.` +
-        denied
-      );
+    if (r.removed_files === 0) {
+      const retry = r.skipped_files > 0 ? " Close other apps and try again later to clear more." : "";
+      return `Nothing could be removed right now.${kept}${retry}${denied}`;
     }
-    if (r.removed_files === 0 && r.denied_files > 0) {
-      return `Nothing could be removed right now.${denied}`;
-    }
-    let msg = `Freed ${fmtBytes(r.freed_bytes)} by removing ${r.removed_files.toLocaleString()} files.`;
-    if (r.skipped_files > 0) {
-      msg += ` ${r.skipped_files.toLocaleString()} files were in use or less than a day old, so they were kept.`;
-    }
-    return msg + denied;
+    return `Freed ${fmtBytes(r.freed_bytes)} by removing ${count(r.removed_files, "file", "files")}.${kept}${denied}`;
   };
 
   const doFlushDns = async () => {
@@ -140,7 +132,7 @@ export function Toolkit() {
       await api.flushDns();
       setNotice("DNS cache flushed.");
     } catch (e) {
-      setNotice(`DNS flush failed: ${e}`);
+      setNotice(String(e));
     } finally {
       setDnsBusy(false);
     }
@@ -196,18 +188,10 @@ export function Toolkit() {
 
       {error && <ErrorBanner message={error} />}
 
-      {!elevated && (
-        <div className="note-banner" style={{ justifyContent: "space-between" }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <Shield size={16} />
-            Some cleanups (Prefetch, Windows Update cache) need administrator rights.
-            Without them, those files are skipped.
-          </span>
-          <button className="btn sm" onClick={restartAsAdmin} style={{ flexShrink: 0 }}>
-            <ShieldCheck size={14} /> Restart as admin
-          </button>
-        </div>
-      )}
+      <AdminNote>
+        Some cleanups (Prefetch, Windows Update cache) need administrator rights. Without
+        them, those files are skipped.
+      </AdminNote>
 
       <div className="section-title">Temporary File Cleaner</div>
       <div className="card pad-lg">

@@ -59,7 +59,7 @@ pub fn analyze_path(path: &str) -> Result<Vec<FolderEntry>, String> {
             is_dir,
         });
     }
-    out.sort_by(|a, b| b.size.cmp(&a.size));
+    out.sort_by_key(|entry| std::cmp::Reverse(entry.size));
     out.truncate(100);
     Ok(out)
 }

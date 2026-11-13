@@ -6,10 +6,10 @@ import { Power, RefreshCw } from "lucide-react";
 import { api } from "../api";
 import type { StartupItem } from "../types";
 import { useNexus } from "../state";
-import { Loading, ErrorBanner, EmptyState } from "../components/ui";
+import { Loading, ErrorBanner, EmptyState, RestartAsAdminButton } from "../components/ui";
 
 export function Startup() {
-  const { setNotice, elevated, restartAsAdmin } = useNexus();
+  const { setNotice, elevated } = useNexus();
   const [items, setItems] = useState<StartupItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -66,11 +66,7 @@ export function Startup() {
           {!elevated &&
             " System-wide entries are read-only here because changing them needs administrator rights."}
         </span>
-        {!elevated && (
-          <button className="btn sm" onClick={restartAsAdmin} style={{ flexShrink: 0 }}>
-            Restart as admin
-          </button>
-        )}
+        {!elevated && <RestartAsAdminButton />}
       </div>
 
       {items && items.length === 0 ? (

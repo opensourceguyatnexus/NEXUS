@@ -4,11 +4,11 @@
 // Core Windows processes and services are protected in the backend.
 
 import { useEffect, useMemo, useState } from "react";
-import { Search, Square, Play, ShieldAlert, RefreshCw, Lock, ListTree, Cog } from "lucide-react";
+import { Search, Square, Play, RefreshCw, Lock, ListTree, Cog } from "lucide-react";
 import { api, fmtBytes } from "../api";
 import type { ServiceInfo, TaskProc } from "../types";
 import { useNexus } from "../state";
-import { Loading, ErrorBanner, EmptyState } from "../components/ui";
+import { AdminNote, Loading, ErrorBanner, EmptyState } from "../components/ui";
 import { Modal } from "../components/Modal";
 
 type Tab = "processes" | "services";
@@ -26,7 +26,7 @@ type Pending =
   | { kind: "service"; svc: ServiceInfo; action: "stop" | "start" };
 
 export function TaskManager() {
-  const { setNotice, elevated, restartAsAdmin } = useNexus();
+  const { setNotice } = useNexus();
   const [tab, setTab] = useState<Tab>("processes");
   const [q, setQ] = useState("");
   const [procs, setProcs] = useState<TaskProc[] | null>(null);
@@ -152,18 +152,10 @@ export function TaskManager() {
 
       {error && <ErrorBanner message={error} />}
 
-      {!elevated && (
-        <div className="note-banner">
-          <ShieldAlert size={16} />
-          <span style={{ flex: 1 }}>
-            Not running as administrator. You can end your own apps, but stopping most
-            services and system-level processes needs admin rights.
-          </span>
-          <button className="btn sm" onClick={restartAsAdmin} style={{ flexShrink: 0 }}>
-            Restart as admin
-          </button>
-        </div>
-      )}
+      <AdminNote>
+        Not running as administrator. You can end your own apps, but stopping most services
+        and system-level processes needs admin rights.
+      </AdminNote>
 
       <div className="filter-tabs">
         <button

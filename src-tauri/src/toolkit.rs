@@ -52,8 +52,8 @@ fn expand_env(input: &str) -> String {
     let bytes = input.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'%' {
-            if let Some(end) = input[i + 1..].find('%') {
+        if bytes[i] == b'%'
+            && let Some(end) = input[i + 1..].find('%') {
                 let name = &input[i + 1..i + 1 + end];
                 if let Ok(val) = std::env::var(name) {
                     out.push_str(&val);
@@ -61,7 +61,6 @@ fn expand_env(input: &str) -> String {
                     continue;
                 }
             }
-        }
         out.push(bytes[i] as char);
         i += 1;
     }
@@ -225,18 +224,18 @@ pub fn empty_recycle_bin() -> Result<(), String> {
     }
 }
 
-// Flush the DNS resolver cache.
+#[link(name = "dnsapi")]
+unsafe extern "system" {
+    fn DnsFlushResolverCache() -> i32;
+}
+
+// Flush the DNS resolver cache. Windows is asked directly: `ipconfig /flushdns`
+// needs administrator rights on newer Windows builds, and this call does not.
 pub fn flush_dns() -> Result<(), String> {
-    let out = Command::new("ipconfig")
-        .arg("/flushdns")
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .map_err(|e| format!("Could not flush DNS: {}", e))?;
-    if out.status.success() {
-        Ok(())
-    } else {
-        Err("DNS flush failed.".into())
+    if unsafe { DnsFlushResolverCache() } != 0 {
+        return Ok(());
     }
+    Err("Windows did not clear the DNS cache. Use Restart as admin and try again.".into())
 }
 
 pub fn clean(selected_ids: Vec<String>) -> CleanResult {

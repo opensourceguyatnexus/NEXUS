@@ -201,7 +201,7 @@ fn bat_text(s: &str) -> String {
 
 // Text progress bar such as [######--------------] 30%%, already batch-escaped.
 fn bat_bar(done: usize, total: usize) -> String {
-    let pct = if total == 0 { 100 } else { done * 100 / total };
+    let pct = (done * 100).checked_div(total).unwrap_or(100);
     let filled = pct / 5;
     format!("[{}{}] {}%%", "#".repeat(filled), "-".repeat(20 - filled), pct)
 }

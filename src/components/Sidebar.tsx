@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type { PageId } from "../App";
 import { LogoMark } from "./LogoMark";
+import { version } from "../../package.json";
 
 type Item = { id: PageId; label: string; icon: typeof Cpu };
 
@@ -80,7 +81,7 @@ export function Sidebar({
       ))}
 
       <div className="sidebar-footer">
-        v0.1.0, no telemetry
+        v{version}, no telemetry
       </div>
     </aside>
   );

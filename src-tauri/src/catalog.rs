@@ -5,6 +5,8 @@
 
 use crate::models::CatalogApp;
 
+// One call per catalog row reads better than a builder here.
+#[allow(clippy::too_many_arguments)]
 fn app(
     id: &str,
     name: &str,

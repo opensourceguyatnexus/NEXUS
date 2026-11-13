@@ -52,9 +52,13 @@
   /* Flat by default: depth is only used for things floating over the page. */
   --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.28);
 
-  --radius: 3px;
-  --radius-sm: 2px;
+  --radius: 6px;
+  --radius-sm: 4px;
   --radius-xs: 2px;
+
+  /* Light only shows in the dark theme, where it gives the black some depth. */
+  --cta-glow: none;
+  --page-glow: transparent;
 
   /* 8-point spacing scale. Everything spaces in multiples of these. */
   --s1: 4px;
@@ -86,16 +90,16 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #141414;
-  --surface: #0d0d0d;
-  --surface-2: #1f1f1f;
-  --surface-3: #303030;
-  --sidebar: #0d0d0d;
+  --bg: #080808;
+  --surface: #131313;
+  --surface-2: #1c1c1c;
+  --surface-3: #2a2a2a;
+  --sidebar: #0c0c0c;
 
-  --border: #303030;
-  --border-strong: #434343;
+  --border: #262626;
+  --border-strong: #3d3d3d;
 
-  --fg: #e8e8e8;
+  --fg: #ededed;
   --fg-dim: #b3b3b3;
   --fg-faint: #949494;
   --fg-ghost: #5c5c5c;
@@ -113,6 +117,8 @@
   --danger-soft: #2a1215;
 
   --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.65);
+  --cta-glow: 0 8px 24px -10px color-mix(in srgb, var(--accent) 90%, transparent);
+  --page-glow: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 /* Alternate accents. Only the hue tokens change; soft/ring/glow derive. */
@@ -259,7 +265,7 @@ button {
 }
 .nav-item.active {
   border-color: var(--accent);
-  background: transparent;
+  background: var(--accent-soft);
   color: var(--accent-text);
   font-weight: 600;
 }
@@ -277,7 +283,9 @@ button {
   overflow-y: auto;
   min-width: 0;
   padding: var(--s8) var(--s10) 64px;
-  background: var(--bg);
+  background:
+    radial-gradient(900px 380px at 85% -120px, var(--page-glow), transparent 70%) no-repeat,
+    var(--bg);
 }
 
 .page-head {
@@ -590,6 +598,7 @@ button {
   background: var(--cta);
   color: var(--on-cta);
   border-color: var(--cta);
+  box-shadow: var(--cta-glow);
 }
 .btn.primary:hover {
   background: var(--cta-hover);

@@ -88,11 +88,10 @@ fn cpu_temp() -> Option<f32> {
     let components = Components::new_with_refreshed_list();
     for c in &components {
         let label = c.label().to_lowercase();
-        if label.contains("cpu") || label.contains("package") || label.contains("tctl") {
-            if let Some(t) = c.temperature() {
+        if (label.contains("cpu") || label.contains("package") || label.contains("tctl"))
+            && let Some(t) = c.temperature() {
                 return Some(t);
             }
-        }
     }
     None
 }

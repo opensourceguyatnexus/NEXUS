@@ -96,13 +96,13 @@ unsafe fn hicon_to_data_url(hicon: HICON) -> Option<String> {
     // GDI gives BGRA. Swap to RGBA. If every alpha byte is zero (some older
     // icons), treat the image as fully opaque so it is not invisible.
     let mut any_alpha = false;
-    for px in buffer.chunks_exact(4) {
+    for px in buffer.as_chunks::<4>().0 {
         if px[3] != 0 {
             any_alpha = true;
             break;
         }
     }
-    for px in buffer.chunks_exact_mut(4) {
+    for px in buffer.as_chunks_mut::<4>().0 {
         px.swap(0, 2); // B <-> R
         if !any_alpha {
             px[3] = 255;

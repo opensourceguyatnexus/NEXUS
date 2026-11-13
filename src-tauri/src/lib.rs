@@ -425,22 +425,19 @@ pub fn run() {
                         button: MouseButton::Left,
                         ..
                     } = event
-                    {
-                        if let Some(w) = tray.app_handle().get_webview_window("main") {
+                        && let Some(w) = tray.app_handle().get_webview_window("main") {
                             let _ = w.show();
                             let _ = w.unminimize();
                             let _ = w.set_focus();
                         }
-                    }
                 })
                 .build(app)?;
 
             // Started by Windows at sign-in: stay in the tray.
-            if std::env::args().any(|a| a == START_HIDDEN_ARG) {
-                if let Some(w) = app.get_webview_window("main") {
+            if std::env::args().any(|a| a == START_HIDDEN_ARG)
+                && let Some(w) = app.get_webview_window("main") {
                     let _ = w.hide();
                 }
-            }
             Ok(())
         })
         .on_window_event(|window, event| {

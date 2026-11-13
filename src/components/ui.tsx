@@ -11,10 +11,12 @@ import {
   Fan,
   AppWindow,
   Gauge,
+  ShieldAlert,
 } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { faviconUrl } from "../api";
+import { useNexus } from "../state";
 
 export function Loading({ label = "Loading" }: { label?: string }) {
   return (
@@ -50,6 +52,35 @@ export function ErrorBanner({ message }: { message: string }) {
     <div className="err-banner">
       <AlertTriangle size={16} />
       {message}
+    </div>
+  );
+}
+
+// Restarting would cut off a running install or update, so it waits for the job.
+export function RestartAsAdminButton() {
+  const { restartAsAdmin, job } = useNexus();
+  return (
+    <button
+      className="btn sm"
+      style={{ flexShrink: 0 }}
+      onClick={restartAsAdmin}
+      disabled={job !== null}
+      title={job ? "Wait for the current job to finish first." : undefined}
+    >
+      Restart as admin
+    </button>
+  );
+}
+
+// Explains what a page cannot do without administrator rights. Hidden once elevated.
+export function AdminNote({ children }: { children: ReactNode }) {
+  const { elevated } = useNexus();
+  if (elevated) return null;
+  return (
+    <div className="note-banner">
+      <ShieldAlert size={16} />
+      <span style={{ flex: 1 }}>{children}</span>
+      <RestartAsAdminButton />
     </div>
   );
 }

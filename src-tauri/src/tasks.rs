@@ -138,7 +138,7 @@ pub fn list_processes() -> Vec<TaskProc> {
         })
         .collect();
 
-    list.sort_by(|a, b| b.mem.cmp(&a.mem));
+    list.sort_by_key(|task| std::cmp::Reverse(task.mem));
     list
 }
 
