@@ -160,7 +160,7 @@ const RESPONSES: Record<string, () => unknown> = {
     total_bytes: 6.5 * GB,
     total_files: 4442,
   }),
-  clean_temp: () => ({ freed_bytes: 6.1 * GB, removed_files: 4310, skipped_files: 132 }),
+  clean_temp: () => ({ freed_bytes: 6.1 * GB, removed_files: 4310, skipped_files: 132, denied_files: 0 }),
   analyze_disk: () => [
     { name: "Games", path: "D:\\Games", size: 820 * GB, is_dir: true },
     { name: "Videos", path: "D:\\Videos", size: 240 * GB, is_dir: true },
@@ -207,6 +207,19 @@ const RESPONSES: Record<string, () => unknown> = {
         accounts: [
           { id: "1", name: "MainPlayer", detail: "main_player", active: true, avatar: null, remembered: true },
           { id: "2", name: "SmurfAccount", detail: "smurf_account", active: false, avatar: null, remembered: true },
+        ],
+      },
+      {
+        id: "battlenet",
+        name: "Battle.net",
+        running: false,
+        managed: false,
+        verified: true,
+        installed: true,
+        current: "main@example.com",
+        accounts: [
+          { id: "main@example.com", name: "main@example.com", detail: "", active: true, avatar: null, remembered: true },
+          { id: "alt@example.com", name: "alt@example.com", detail: "", active: false, avatar: null, remembered: true },
         ],
       },
       {
@@ -274,6 +287,8 @@ const RESPONSES: Record<string, () => unknown> = {
   ],
   upgrade_app: () => ({ ok: true, message: "Demo only, nothing was changed." }),
   upgrade_all: () => ({ ok: true, message: "Demo only, nothing was changed." }),
+  "plugin:dialog|save": () => "C:\\Demo\\nexus-setup.bat",
+  "plugin:autostart|is_enabled": () => false,
 };
 
 export async function invoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> {

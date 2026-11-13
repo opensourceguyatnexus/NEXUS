@@ -370,6 +370,8 @@ async fn upgrade_all() -> Result<InstallResult, String> {
     blocking(updates::upgrade_all).await
 }
 
+const START_HIDDEN_ARG: &str = "--minimized";
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // A restart as admin starts this copy just before the old one exits. Wait so
@@ -392,7 +394,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
-            None,
+            Some(vec![START_HIDDEN_ARG]),
         ))
         .setup(|app| {
             elevation::allow_reopen_from_normal_copy(&app.config().identifier);
@@ -432,6 +434,13 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+
+            // Started by Windows at sign-in: stay in the tray.
+            if std::env::args().any(|a| a == START_HIDDEN_ARG) {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            }
             Ok(())
         })
         .on_window_event(|window, event| {

@@ -138,20 +138,27 @@ pub fn scan() -> ScanResult {
     }
 }
 
-// Installers and running apps unpack into Temp, so leave files changed in the last
-// day. Caches can be rebuilt at any time, so only the Temp folders need this.
+// Installers and running apps unpack into Temp, so leave files that were changed or
+// that arrived in the last day. Unpacked files often keep an old modified time, so
+// the creation time is checked too. Caches can be rebuilt at any time, so only the
+// Temp folders need this.
 const TEMP_MIN_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
 fn is_recent(meta: &fs::Metadata) -> bool {
-    meta.modified()
-        .ok()
-        .and_then(|m| m.elapsed().ok())
-        .is_some_and(|age| age < TEMP_MIN_AGE)
+    let young = |t: std::io::Result<std::time::SystemTime>| {
+        t.ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age < TEMP_MIN_AGE)
+    };
+    young(meta.modified()) || young(meta.created())
 }
 
-// Delete files inside one root. Returns (freed_bytes, removed, skipped).
-fn clean_dir(root: &Path) -> (u64, u64, u64) {
+// Delete files inside one root. Returns (freed_bytes, removed, skipped, denied).
+// `denied` counts files in Windows folders that could not be removed because the
+// app is not running as administrator.
+fn clean_dir(root: &Path) -> (u64, u64, u64, u64) {
     let keep_recent = root.ends_with("Temp");
+    let needs_admin = !crate::elevation::is_elevated()
+        && std::env::var("SystemRoot").is_ok_and(|w| root.starts_with(w));
+    let mut denied = 0u64;
     let mut freed = 0u64;
     let mut removed = 0u64;
     let mut skipped = 0u64;
@@ -181,6 +188,9 @@ fn clean_dir(root: &Path) -> (u64, u64, u64) {
                             freed += size;
                             removed += 1;
                         }
+                        Err(e) if needs_admin && e.kind() == std::io::ErrorKind::PermissionDenied => {
+                            denied += 1
+                        }
                         Err(_) => skipped += 1,
                     }
                 }
@@ -193,7 +203,7 @@ fn clean_dir(root: &Path) -> (u64, u64, u64) {
     for d in dirs_seen {
         let _ = fs::remove_dir(&d);
     }
-    (freed, removed, skipped)
+    (freed, removed, skipped, denied)
 }
 
 // Empty the Recycle Bin for all drives via PowerShell (no extra prompts).
@@ -233,18 +243,21 @@ pub fn clean(selected_ids: Vec<String>) -> CleanResult {
     let mut freed_bytes = 0u64;
     let mut removed_files = 0u64;
     let mut skipped_files = 0u64;
+    let mut denied_files = 0u64;
     for (id, _label, root) in resolved_roots() {
         if !selected_ids.contains(&id) {
             continue;
         }
-        let (freed, removed, skipped) = clean_dir(&root);
+        let (freed, removed, skipped, denied) = clean_dir(&root);
         freed_bytes += freed;
         removed_files += removed;
         skipped_files += skipped;
+        denied_files += denied;
     }
     CleanResult {
         freed_bytes,
         removed_files,
         skipped_files,
+        denied_files,
     }
 }

@@ -13,6 +13,7 @@ import { Modal } from "../components/Modal";
 
 const DOMAINS: Record<string, string> = {
   steam: "steampowered.com",
+  battlenet: "battle.net",
   riot: "riotgames.com",
   discord: "discord.com",
   epic: "epicgames.com",
@@ -108,6 +109,11 @@ export function Accounts() {
   if (!data && !error) return <Loading label="Finding your accounts" />;
 
   const saveName = pending?.kind === "save" ? pending.name.trim() : "";
+  // Without a verified account, saving under an existing name replaces that entry.
+  const replaces =
+    pending?.kind === "save" && !pending.platform.verified
+      ? pending.platform.accounts.find((a) => a.name.toLowerCase() === saveName.toLowerCase())
+      : undefined;
 
   return (
     <div>
@@ -125,7 +131,7 @@ export function Accounts() {
 
       <div className="section-title">Games</div>
       {data && data.platforms.length === 0 ? (
-        <EmptyState title="No supported launchers found" hint="Steam, Riot, Discord, Epic and Ubisoft are supported." />
+        <EmptyState title="No supported launchers found" hint="Steam, Battle.net, Riot, Discord, Epic and Ubisoft are supported." />
       ) : (
         data?.platforms.map((p) => (
           <div className="card" key={p.id} style={{ marginBottom: 14 }}>
@@ -153,7 +159,9 @@ export function Accounts() {
               )}
             </div>
 
-            {p.accounts.length === 0 ? (
+            {p.error && <ErrorBanner message={p.error} />}
+
+            {p.error && p.accounts.length === 0 ? null : p.accounts.length === 0 ? (
               <p className="muted" style={{ margin: 0 }}>
                 {p.managed
                   ? `Sign in to ${p.name} with "stay signed in", then press Save current.`
@@ -167,8 +175,9 @@ export function Accounts() {
                     <span className="name">{a.name}</span>
                     {(a.detail || !a.remembered) && (
                       <span className="path">
-                        {a.detail}
-                        {!a.remembered && !p.managed && " · Steam will ask for the password"}
+                        {[a.detail, !a.remembered && !p.managed && `${p.name} will ask for the password`]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </span>
                     )}
                   </span>
@@ -265,7 +274,9 @@ export function Accounts() {
                   : pending.kind === "switch"
                     ? "Switch"
                     : pending.kind === "save"
-                      ? "Save"
+                      ? replaces
+                        ? "Replace"
+                        : "Save"
                       : pending.kind === "add"
                         ? "Continue"
                         : "Remove"}
@@ -291,6 +302,7 @@ export function Accounts() {
                 value={pending.name}
                 onChange={(e) => setPending({ ...pending, name: e.target.value })}
               />
+              {replaces && <p>This replaces the saved login "{replaces.name}".</p>}
               <p>{pending.platform.name} will close while the login is saved. Sign in first, and tick "stay signed in".</p>
             </div>
           )}
@@ -298,7 +310,9 @@ export function Accounts() {
             <p>
               {pending.platform.id === "steam"
                 ? "Steam will close and reopen on its account picker. Close any game first."
-                : `${pending.platform.name} will close and reopen signed out. Close any game first. Save the current account first if you want to come back to it. After signing in, press Save current.`}
+                : pending.platform.id === "battlenet"
+                  ? 'Battle.net will close and reopen on its sign-in screen. Close any game first. Tick "Keep me logged in" when you sign in, so the account shows up here.'
+                  : `${pending.platform.name} will close and reopen signed out. Close any game first. Save the current account first if you want to come back to it. After signing in, press Save current.`}
             </p>
           )}
           {pending.kind === "delete" && (

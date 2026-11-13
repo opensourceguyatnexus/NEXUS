@@ -39,6 +39,8 @@ export function Setup() {
   };
 
   const selectAll = () => setSelected(new Set((items ?? []).map((i) => i.winget_id)));
+  const selectMissing = () =>
+    setSelected(new Set((items ?? []).filter((i) => !i.installed).map((i) => i.winget_id)));
   const clearSelection = () => setSelected(new Set());
 
   const saveInstaller = async (wingetIds: string[], fileName: string) => {
@@ -78,6 +80,9 @@ export function Setup() {
           <button className="btn" onClick={selectAll}>
             <ListChecks size={15} /> Select all
           </button>
+          <button className="btn" onClick={selectMissing} title="Select only the apps not found on this PC">
+            <ListChecks size={15} /> Select missing
+          </button>
           <button className="btn" onClick={clearSelection} disabled={selectedCount === 0}>
             <X size={15} /> Clear
           </button>
@@ -112,7 +117,14 @@ export function Setup() {
                   />
                   <AppLogo domain={item.domain} size={32} />
                   <span className="meta">
-                    <span className="name">{item.name}</span>
+                    <span className="name">
+                      {item.name}
+                      {item.installed && (
+                        <span className="badge ok" style={{ marginLeft: 8 }} title="Found on this PC">
+                          Installed
+                        </span>
+                      )}
+                    </span>
                     <span className="path" style={{ fontFamily: "var(--font)", color: "var(--fg-dim)" }}>
                       {item.description}
                     </span>

@@ -3,8 +3,8 @@
 // Lists programs that run at sign-in, from the Run registry keys (per-user and
 // system) and the Startup folders. Enable/disable uses the same StartupApproved
 // mechanism Task Manager uses: a small binary value whose first byte is 0x02
-// (enabled) or 0x03 (disabled). We only toggle user-scope entries, which need no
-// admin rights; system-wide entries are listed read-only.
+// (enabled) or 0x03 (disabled). User-scope entries need no admin rights;
+// system-wide entries can only be toggled when NEXUS runs as administrator.
 
 use crate::models::StartupItem;
 use std::path::PathBuf;
@@ -12,8 +12,12 @@ use winreg::enums::*;
 use winreg::{RegKey, RegValue};
 
 const RUN: &str = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
+// Where 32-bit installers put their all-users entries.
+const RUN32: &str = "SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run";
 const APPROVED_RUN: &str =
     "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run";
+const APPROVED_RUN32: &str =
+    "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run32";
 const APPROVED_FOLDER: &str =
     "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\StartupFolder";
 
@@ -30,8 +34,8 @@ fn approved_enabled(hive: &RegKey, approved_path: &str, name: &str) -> bool {
     true
 }
 
-fn read_run_key(hive: &RegKey, approved_path: &str, source: &str, location: &str, can_toggle: bool, out: &mut Vec<StartupItem>) {
-    let run = match hive.open_subkey(RUN) {
+fn read_run_key(hive: &RegKey, run_path: &str, approved_path: &str, source: &str, location: &str, can_toggle: bool, out: &mut Vec<StartupItem>) {
+    let run = match hive.open_subkey(run_path) {
         Ok(k) => k,
         Err(_) => return,
     };
@@ -101,8 +105,9 @@ pub fn list_startup(elevated: bool) -> Vec<StartupItem> {
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
     let mut out = Vec::new();
 
-    read_run_key(&hkcu, APPROVED_RUN, "hkcu_run", "This user (registry)", true, &mut out);
-    read_run_key(&hklm, APPROVED_RUN, "hklm_run", "All users (registry)", elevated, &mut out);
+    read_run_key(&hkcu, RUN, APPROVED_RUN, "hkcu_run", "This user (registry)", true, &mut out);
+    read_run_key(&hklm, RUN, APPROVED_RUN, "hklm_run", "All users (registry)", elevated, &mut out);
+    read_run_key(&hklm, RUN32, APPROVED_RUN32, "hklm_run32", "All users (registry, 32-bit)", elevated, &mut out);
 
     read_folder(user_startup_dir(), &hkcu, "user_folder", "This user (Startup folder)", true, &mut out);
     read_folder(common_startup_dir(), &hklm, "common_folder", "All users (Startup folder)", elevated, &mut out);
@@ -149,6 +154,7 @@ pub fn set_startup_enabled(source: &str, name: &str, enabled: bool) -> Result<()
     match source {
         "hkcu_run" => write_approved(&hkcu, APPROVED_RUN, name, enabled),
         "hklm_run" => write_approved(&hklm, APPROVED_RUN, name, enabled),
+        "hklm_run32" => write_approved(&hklm, APPROVED_RUN32, name, enabled),
         "user_folder" => {
             let value_name = folder_value_name(user_startup_dir(), name)
                 .ok_or_else(|| "Could not find the startup file.".to_string())?;

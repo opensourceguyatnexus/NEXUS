@@ -10,6 +10,7 @@ use crate::models::{DiskUsage, MonitorSnapshot, ProcInfo};
 use nvml_wrapper::enum_wrappers::device::TemperatureSensor;
 use nvml_wrapper::Nvml;
 use serde::Deserialize;
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 use sysinfo::{Components, Disks, ProcessesToUpdate, System};
@@ -20,6 +21,17 @@ use wmi::{COMLibrary, WMIConnection};
 #[serde(rename_all = "PascalCase")]
 struct Win32VideoController {
     name: Option<String>,
+}
+
+// The adapter name does not change while the app runs, so once WMI has
+// answered it is not asked again.
+fn gpu_name_cached() -> Option<String> {
+    static GPU_NAME: OnceLock<String> = OnceLock::new();
+    if let Some(n) = GPU_NAME.get() {
+        return Some(n.clone());
+    }
+    let n = gpu_name_wmi()?;
+    Some(GPU_NAME.get_or_init(|| n).clone())
 }
 
 fn gpu_name_wmi() -> Option<String> {
@@ -40,8 +52,23 @@ struct GpuStats {
     fan: Option<f32>,
 }
 
+// Starting NVML is slow, so a working handle is kept between polls. It is
+// dropped when the card cannot be read (for example after a driver update), so
+// the next poll starts fresh.
 fn nvml_stats() -> Option<GpuStats> {
-    let nvml = Nvml::init().ok()?;
+    static NVML: Mutex<Option<Nvml>> = Mutex::new(None);
+    let mut slot = NVML.lock().unwrap_or_else(|e| e.into_inner());
+    if slot.is_none() {
+        *slot = Nvml::init().ok();
+    }
+    let stats = read_gpu(slot.as_ref()?);
+    if stats.is_none() {
+        *slot = None;
+    }
+    stats
+}
+
+fn read_gpu(nvml: &Nvml) -> Option<GpuStats> {
     let device = nvml.device_by_index(0).ok()?;
     let mem = device.memory_info().ok();
     Some(GpuStats {
@@ -99,7 +126,7 @@ pub fn snapshot() -> MonitorSnapshot {
     let gpu_name = gpu
         .as_ref()
         .and_then(|g| g.name.clone())
-        .or_else(gpu_name_wmi);
+        .or_else(gpu_name_cached);
 
     MonitorSnapshot {
         cpu_usage,

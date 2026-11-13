@@ -27,7 +27,7 @@ function HwRow({ d }: { d: HardwareDevice }) {
 }
 
 export function SettingsPage() {
-  const { settings, hardware, refresh, setTheme, setAccent, loading, setNotice, elevated, restartAsAdmin } =
+  const { settings, hardware, refresh, setTheme, setAccent, loading, setNotice, elevated, restartAsAdmin, job } =
     useNexus();
   const isDark = settings?.theme === "dark";
   const currentAccent = settings?.accent ?? "blue";
@@ -155,7 +155,12 @@ export function SettingsPage() {
             </div>
           </div>
           {!elevated && (
-            <button className="btn primary" onClick={restartAsAdmin}>
+            <button
+              className="btn primary"
+              onClick={restartAsAdmin}
+              disabled={job !== null}
+              title={job ? "Wait for the current install or update to finish" : undefined}
+            >
               <ShieldCheck size={15} /> Restart as administrator
             </button>
           )}

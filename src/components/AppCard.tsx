@@ -2,11 +2,14 @@
 // action. If installed it launches; if installed but the exe is unresolved it
 // lets the user locate it; if missing it links to the official page.
 
+import { useState } from "react";
+import { createPortal } from "react-dom";
 import { ExternalLink, FolderSearch, Globe, Rocket, Star, Trash2 } from "lucide-react";
 import type { UnifiedApp } from "../state";
 import { useNexus } from "../state";
 import { domainFromUrl } from "../api";
 import { AppLogo } from "./ui";
+import { Modal } from "./Modal";
 import { CATEGORY_LABELS } from "../types";
 
 export function AppCard({ app }: { app: UnifiedApp }) {
@@ -15,6 +18,7 @@ export function AppCard({ app }: { app: UnifiedApp }) {
   const fav = settings?.favorites.includes(app.id) ?? false;
   const canLaunch = app.installed && (!!app.launch_path || !!app.launch_aumid);
   const installedNoPath = app.installed && !app.launch_path && !app.launch_aumid;
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   return (
     <div className="card app-card fade-in">
@@ -102,12 +106,41 @@ export function AppCard({ app }: { app: UnifiedApp }) {
           <button
             className="btn danger icon"
             title="Remove custom entry"
-            onClick={() => removeCustomApp(app.id)}
+            onClick={() => setConfirmRemove(true)}
           >
             <Trash2 size={15} />
           </button>
         )}
       </div>
+
+      {/* Rendered outside the card so the card's entrance animation cannot trap the overlay. */}
+      {confirmRemove && createPortal(
+        <Modal
+          title={`Remove ${app.name}?`}
+          danger
+          icon={<Trash2 size={20} />}
+          onClose={() => setConfirmRemove(false)}
+          footer={
+            <>
+              <button className="btn ghost" onClick={() => setConfirmRemove(false)}>
+                Cancel
+              </button>
+              <button
+                className="btn danger"
+                onClick={() => {
+                  setConfirmRemove(false);
+                  removeCustomApp(app.id);
+                }}
+              >
+                Remove
+              </button>
+            </>
+          }
+        >
+          <p>This removes the entry from NEXUS. The program itself is not uninstalled.</p>
+        </Modal>,
+        document.body
+      )}
     </div>
   );
 }

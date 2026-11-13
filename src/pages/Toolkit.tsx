@@ -1,7 +1,7 @@
 // Windows Toolkit: a temp-file cleaner that always scans before it cleans and
 // asks for confirmation, plus one-click shortcuts to built-in Windows tools.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Trash2,
   Search,
@@ -42,6 +42,8 @@ export function Toolkit() {
   const { openTool, elevated, restartAsAdmin, setNotice } = useNexus();
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Locations the user unticked. A rescan keeps them unticked.
+  const excluded = useRef<Set<string>>(new Set());
   const [scanning, setScanning] = useState(false);
   const [cleaning, setCleaning] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -67,7 +69,11 @@ export function Toolkit() {
     try {
       const r = await api.scanTemp();
       setScan(r);
-      setSelected(new Set(r.locations.filter((l) => l.size_bytes > 0).map((l) => l.id)));
+      setSelected(
+        new Set(
+          r.locations.filter((l) => l.size_bytes > 0 && !excluded.current.has(l.id)).map((l) => l.id),
+        ),
+      );
     } catch (e) {
       setError(String(e));
     } finally {
@@ -76,6 +82,8 @@ export function Toolkit() {
   };
 
   const toggle = (id: string) => {
+    if (selected.has(id)) excluded.current.add(id);
+    else excluded.current.delete(id);
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -84,10 +92,8 @@ export function Toolkit() {
     });
   };
 
-  const selectedBytes =
-    scan?.locations
-      .filter((l) => selected.has(l.id))
-      .reduce((sum, l) => sum + l.size_bytes, 0) ?? 0;
+  const selectedLocations = scan?.locations.filter((l) => selected.has(l.id)) ?? [];
+  const selectedBytes = selectedLocations.reduce((sum, l) => sum + l.size_bytes, 0);
 
   const doClean = async () => {
     setConfirmOpen(false);
@@ -106,18 +112,26 @@ export function Toolkit() {
 
   // A friendly summary of what the clean actually did.
   const resultMessage = (r: CleanResult): string => {
+    const denied =
+      r.denied_files > 0
+        ? ` ${r.denied_files.toLocaleString()} files need administrator rights. Use Restart as admin to clear them.`
+        : "";
     if (r.removed_files === 0 && r.skipped_files > 0) {
       return (
         `Nothing could be removed right now. ${r.skipped_files.toLocaleString()} ` +
         `files are in use or less than a day old, and were skipped to keep running ` +
-        `programs safe. Close other apps and try again later to clear more.`
+        `programs safe. Close other apps and try again later to clear more.` +
+        denied
       );
+    }
+    if (r.removed_files === 0 && r.denied_files > 0) {
+      return `Nothing could be removed right now.${denied}`;
     }
     let msg = `Freed ${fmtBytes(r.freed_bytes)} by removing ${r.removed_files.toLocaleString()} files.`;
     if (r.skipped_files > 0) {
       msg += ` ${r.skipped_files.toLocaleString()} files were in use or less than a day old, so they were kept.`;
     }
-    return msg;
+    return msg + denied;
   };
 
   const doFlushDns = async () => {
@@ -356,6 +370,10 @@ export function Toolkit() {
               </div>
             ))}
           </div>
+        ) : analyzedPath && !diskError ? (
+          <div className="muted" style={{ fontSize: "var(--text-label)" }}>
+            {analyzedPath} is empty. Use the up button to go back.
+          </div>
         ) : (
           <div className="muted" style={{ fontSize: "var(--text-label)" }}>
             Enter a folder (like C:\ or C:\Users) and click Analyze to see what is using space.
@@ -397,8 +415,8 @@ export function Toolkit() {
         >
           <p>
             This removes temporary files from {selected.size} selected location
-            {selected.size === 1 ? "" : "s"}, freeing about{" "}
-            <strong>{fmtBytes(selectedBytes)}</strong>. Files that are currently in
+            {selected.size === 1 ? "" : "s"} ({selectedLocations.map((l) => l.label).join(", ")}),
+            freeing about <strong>{fmtBytes(selectedBytes)}</strong>. Files that are currently in
             use are skipped automatically. This cannot be undone.
           </p>
         </Modal>

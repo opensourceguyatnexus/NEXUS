@@ -19,7 +19,7 @@ NEXUS is made to help anyone with a Windows PC, gamers and non-gamers alike. All
 
 ## What it does
 
-- **Account Switcher:** change Steam, Riot Games, Discord, Epic Games and Ubisoft Connect accounts in one click, and open browser profiles. Passwords are never stored, and saved logins stay on your PC.
+- **Account Switcher:** change Steam, Battle.net, Riot Games, Discord, Epic Games and Ubisoft Connect accounts in one click, and open browser profiles. Passwords are never stored, and saved logins stay on your PC.
 - **New PC Setup:** tick the apps you want and export one installer that runs through winget.
 - **Windows Toolkit:** see and clear temp files, empty the Recycle Bin, flush DNS and find what is using your disk.
 - **Disk Manager:** resize, create, rename, format and delete partitions, with Windows and system partitions protected.
@@ -29,7 +29,7 @@ NEXUS is made to help anyone with a Windows PC, gamers and non-gamers alike. All
 
 NEXUS has no telemetry and no account. App logos are fetched from Google's favicon service.
 
-Riot Games, Epic Games and Ubisoft Connect switching follows each launcher's known login files. It hasn't been fully tested on every launcher yet, so please report anything that doesn't work.
+Battle.net, Riot Games, Epic Games and Ubisoft Connect switching follows each launcher's known login files. It hasn't been fully tested on every launcher yet, so please report anything that doesn't work.
 
 ## Screenshots
 
@@ -51,7 +51,7 @@ Anyone can help, and you don't need to be a programmer. Report a bug, suggest an
 
 ## Build it
 
-You need [Node.js](https://nodejs.org) and [Rust](https://rustup.rs).
+You need Windows 10 or 11, [Node.js](https://nodejs.org) 22.12 or newer, [Rust](https://rustup.rs) (stable, MSVC toolchain) and the Microsoft C++ Build Tools. See the [Tauri prerequisites](https://tauri.app/start/prerequisites/).
 
 ```
 npm install
@@ -64,7 +64,11 @@ To build the app:
 npm run tauri build -- --no-bundle
 ```
 
-The exe is created at `src-tauri/target/release/nexus.exe`.
+The exe is created at `src-tauri/target/release/nexus.exe`. Leave out `-- --no-bundle` to also build an installer into `src-tauri/target/release/bundle/nsis`.
+
+Releases are built by `.github/workflows/release.yml`: pushing a version tag such as `v0.2.0` builds the exe and attaches it to a draft release. Pull requests are checked by `.github/workflows/ci.yml`.
+
+To report a security problem, see [SECURITY.md](SECURITY.md).
 
 ## Website
 

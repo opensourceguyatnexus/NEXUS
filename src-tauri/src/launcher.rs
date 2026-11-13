@@ -6,8 +6,9 @@
 //  - open_windows_tool: open a built-in Windows tool from a fixed allowlist.
 //
 // We never build a shell command string from caller-supplied text. Executables
-// are spawned directly; the Windows tools come from a hardcoded match, so there
-// is nothing to inject into.
+// are spawned directly (or handed to Explorer as a single path when NEXUS runs
+// as administrator); the Windows tools come from a hardcoded match, so there is
+// nothing to inject into.
 
 use std::os::windows::process::CommandExt;
 use std::path::Path;
@@ -60,6 +61,16 @@ pub fn launch_path(path: &str) -> Result<(), String> {
     }
     if !p.is_file() {
         return Err(format!("Not a file: {}", path));
+    }
+    // When NEXUS runs as administrator, start the app through Explorer so it
+    // does not inherit admin rights. Explorer misreads paths with a comma, so
+    // those keep the direct start below.
+    if crate::elevation::is_elevated() && !path.contains(',') {
+        return Command::new("explorer.exe")
+            .arg(p)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("Failed to launch: {}", e));
     }
     let dir = p.parent();
     let mut cmd = Command::new(path);

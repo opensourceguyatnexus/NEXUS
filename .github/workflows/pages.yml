@@ -8,7 +8,10 @@ on:
       - "website/**"
       - "src/**"
       - "public/**"
+      - "index.html"
+      - "package.json"
       - "package-lock.json"
+      - "tsconfig*.json"
       - "vite.demo.config.ts"
       - ".github/workflows/pages.yml"
   workflow_dispatch:

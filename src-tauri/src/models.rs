@@ -162,6 +162,7 @@ pub struct CleanResult {
     pub freed_bytes: u64,
     pub removed_files: u64,
     pub skipped_files: u64,
+    pub denied_files: u64,
 }
 
 // An app with an available upgrade, from winget.
@@ -189,7 +190,7 @@ pub struct StartupItem {
     pub command: String,
     // Human label for where it comes from.
     pub location: String,
-    // Internal source tag used for toggling: hkcu_run, hklm_run, user_folder, common_folder.
+    // Internal source tag used for toggling: hkcu_run, hklm_run, hklm_run32, user_folder, common_folder.
     pub source: String,
     pub enabled: bool,
     // False when toggling would need admin (system-wide entries).

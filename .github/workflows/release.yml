@@ -1,0 +1,50 @@
+# Builds NEXUS when a version tag (like v0.2.0) is pushed and attaches the exe to a draft release.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Rust comes with the runner; no outside action runs in this job, which can write releases.
+      - name: Update Rust
+        shell: pwsh
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+      # Keeps the build machine's folder names out of the exe.
+      - name: Hide build paths
+        shell: pwsh
+        run: |
+          "RUSTFLAGS=--remap-path-prefix=$env:GITHUB_WORKSPACE=nexus --remap-path-prefix=$env:USERPROFILE=home" >> $env:GITHUB_ENV
+      - run: npm run tauri build -- --no-bundle
+      - name: Attach the exe to a draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          Copy-Item src-tauri/target/release/nexus.exe NEXUS.exe
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:TAG NEXUS.exe --clobber
+          } else {
+            gh release create $env:TAG NEXUS.exe --draft --verify-tag --title "NEXUS $env:TAG" --generate-notes
+          }
+          exit $LASTEXITCODE

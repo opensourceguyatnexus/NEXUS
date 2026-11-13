@@ -105,6 +105,7 @@ export interface DiskInfo {
   size: number;
   health: string;
   is_boot: boolean;
+  is_offline?: boolean;
   partitions: PartitionInfo[];
   free: FreeSpace[];
 }
@@ -132,6 +133,7 @@ export interface AccountPlatform {
   installed: boolean;
   current: string | null;
   accounts: AccountEntry[];
+  error?: string | null;
 }
 
 export interface BrowserProfile {
@@ -183,6 +185,7 @@ export interface CleanResult {
   freed_bytes: number;
   removed_files: number;
   skipped_files: number;
+  denied_files: number;
 }
 
 export interface RuntimeItem {

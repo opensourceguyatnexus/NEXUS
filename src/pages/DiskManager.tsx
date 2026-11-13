@@ -109,6 +109,7 @@ export function DiskManager() {
   if (!disks && !error) return <Loading label="Reading disks" />;
 
   const selPart = sel?.kind === "part" ? sel.part : null;
+  const adminTitle = !elevated ? "Needs administrator rights. Use Restart as admin above." : undefined;
 
   return (
     <div>
@@ -157,8 +158,9 @@ export function DiskManager() {
                     Disk {d.number} · {d.name}
                   </div>
                   <div className="muted" style={{ fontSize: "var(--text-meta)" }}>
-                    {fmtBytes(d.size)} · {d.style} · {d.bus}
+                    {fmtBytes(d.size)} · {d.style === "RAW" ? "Not initialized" : d.style} · {d.bus}
                     {d.is_boot ? " · Windows disk" : ""}
+                    {d.is_offline ? " · Offline" : ""}
                   </div>
                 </div>
               </div>
@@ -227,26 +229,26 @@ export function DiskManager() {
                     ) : (
                       <div className="btn-row" style={{ flexWrap: "wrap" }}>
                         {!sel.part.is_boot && (
-                          <button className="btn sm" onClick={() => setOp("letter")}>
+                          <button className="btn sm" disabled={!elevated} title={adminTitle} onClick={() => setOp("letter")}>
                             <Type size={14} /> Letter
                           </button>
                         )}
                         {sel.part.file_system && (
-                          <button className="btn sm" onClick={() => setOp("label")}>
+                          <button className="btn sm" disabled={!elevated} title={adminTitle} onClick={() => setOp("label")}>
                             <Tag size={14} /> Label
                           </button>
                         )}
                         {sel.part.resizable && (
-                          <button className="btn sm" onClick={() => setOp("resize")}>
+                          <button className="btn sm" disabled={!elevated} title={adminTitle} onClick={() => setOp("resize")}>
                             <MoveHorizontal size={14} /> Extend / Shrink
                           </button>
                         )}
                         {!sel.part.is_boot && (
                           <>
-                            <button className="btn sm" onClick={() => setOp("format")}>
+                            <button className="btn sm" disabled={!elevated} title={adminTitle} onClick={() => setOp("format")}>
                               <Eraser size={14} /> Format
                             </button>
-                            <button className="btn danger sm" onClick={() => setOp("delete")}>
+                            <button className="btn danger sm" disabled={!elevated} title={adminTitle} onClick={() => setOp("delete")}>
                               <Trash2 size={14} /> Delete
                             </button>
                           </>
@@ -262,9 +264,17 @@ export function DiskManager() {
                         {fmtBytes(sel.free.size)} free on Disk {sel.disk}
                       </div>
                     </div>
-                    <button className="btn primary sm" onClick={() => setOp("create")}>
-                      <Plus size={14} /> Create partition
-                    </button>
+                    {d.is_offline || d.style === "RAW" ? (
+                      <div className="muted" style={{ fontSize: "var(--text-meta)", maxWidth: 420 }}>
+                        {d.is_offline
+                          ? "This disk is offline. Open Windows Disk Management, right-click the disk and choose Online, then press Refresh."
+                          : "This disk is not initialized. Open Windows Disk Management, right-click the disk and choose Initialize Disk, then press Refresh."}
+                      </div>
+                    ) : (
+                      <button className="btn primary sm" disabled={!elevated} title={adminTitle} onClick={() => setOp("create")}>
+                        <Plus size={14} /> Create partition
+                      </button>
+                    )}
                   </>
                 )}
               </div>

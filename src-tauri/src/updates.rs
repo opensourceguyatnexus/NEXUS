@@ -2,8 +2,10 @@
 //
 // winget has no machine-readable output for `upgrade`, so we parse the text
 // table. We use the header row to find each column's start, which handles names
-// and ids that contain spaces. If winget's output cannot be read (for example a
-// localized Windows), that is reported instead of claiming everything is current.
+// and ids that contain spaces. The header is found by the dashes line under it,
+// not by its wording, so this also works on a non-English Windows. If winget
+// fails and prints no table, that is reported instead of claiming everything is
+// current.
 
 use crate::models::AppUpdate;
 use crate::runtimes::InstallResult;
@@ -11,6 +13,8 @@ use std::os::windows::process::CommandExt;
 use std::process::Command;
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+// winget's "no package found" exit code (0x8A150014).
+const NO_PACKAGES_FOUND: i32 = 0x8A15_0014_u32 as i32;
 
 pub fn list_updates() -> Result<Vec<AppUpdate>, String> {
     let output = Command::new("winget")
@@ -24,31 +28,47 @@ pub fn list_updates() -> Result<Vec<AppUpdate>, String> {
         .output()
         .map_err(|e| format!("Could not run winget: {}. Is App Installer installed?", e))?;
     let text = String::from_utf8_lossy(&output.stdout);
-    if text.contains("No installed package found") {
+    if let Some(list) = parse_upgrade_table(&text) {
+        return Ok(list);
+    }
+    // No table at all: winget prints only a sentence when nothing needs updating.
+    let code = output.status.code().unwrap_or(-1);
+    if code == 0 || code == NO_PACKAGES_FOUND || text.contains("No installed package found") {
         return Ok(Vec::new());
     }
-    parse_upgrade_table(&text).ok_or_else(|| {
-        format!(
-            "Could not read winget's update list (exit code {}).",
-            output.status.code().unwrap_or(-1)
-        )
-    })
+    Err(format!("Could not read winget's update list (exit code {}).", code))
 }
 
 fn parse_upgrade_table(text: &str) -> Option<Vec<AppUpdate>> {
-    let lines: Vec<&str> = text.lines().collect();
+    // winget redraws its progress spinner with bare carriage returns, so keep
+    // only what is left on screen after the last one.
+    let lines: Vec<&str> = text
+        .lines()
+        .map(|l| {
+            let l = l.trim_end_matches('\r');
+            l.rsplit('\r').next().unwrap_or(l)
+        })
+        .collect();
 
-    // Find the header row (English Windows).
-    let header_idx = lines.iter().position(|l| {
-        l.contains("Name") && l.contains("Id") && l.contains("Version") && l.contains("Available")
-    })?;
-    let header = lines[header_idx];
+    let is_rule = |l: &str| {
+        let t = l.trim();
+        t.len() >= 10 && t.chars().all(|c| c == '-')
+    };
+    // The header is the line above the first line made only of dashes.
+    let dashes_idx = lines.iter().position(|l| is_rule(l))?;
+    let header: Vec<char> = lines[dashes_idx.checked_sub(1)?].chars().collect();
 
-    // The header is ASCII, so byte offsets equal char offsets here.
-    let id_i = header.find("Id")?;
-    let ver_i = header.find("Version")?;
-    let avail_i = header.find("Available")?;
-    let src_i = header.find("Source").unwrap_or(usize::MAX);
+    // Each column starts where a header word starts. Counted in characters,
+    // because translated headers are not always ASCII.
+    let starts: Vec<usize> = (0..header.len())
+        .filter(|&i| !header[i].is_whitespace() && (i == 0 || header[i - 1].is_whitespace()))
+        .collect();
+    // Name, Id, Version, Available, and usually Source.
+    if starts.len() < 4 {
+        return None;
+    }
+    let (name_i, id_i, ver_i, avail_i) = (starts[0], starts[1], starts[2], starts[3]);
+    let src_i = starts.get(4).copied().unwrap_or(usize::MAX);
 
     let slice = |chars: &[char], start: usize, end: usize| -> String {
         if start >= chars.len() {
@@ -59,25 +79,21 @@ fn parse_upgrade_table(text: &str) -> Option<Vec<AppUpdate>> {
     };
 
     let mut result = Vec::new();
-    // Data rows start two lines after the header (skip the dashes line).
-    for line in lines.iter().skip(header_idx + 2) {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            break; // end of the first table block
-        }
-        // Stop at the summary line(s).
-        let lower = trimmed.to_lowercase();
-        if lower.contains("upgrades available") || lower.contains("package(s) have") {
+    for line in lines.iter().skip(dashes_idx + 1) {
+        let chars: Vec<char> = line.chars().collect();
+        // A blank line, a short summary line or the start of a second table
+        // ends the first table block.
+        if chars.len() <= avail_i || is_rule(line) {
             break;
         }
-        let chars: Vec<char> = line.chars().collect();
-        let name = slice(&chars, 0, id_i);
+        let name = slice(&chars, name_i, id_i);
         let id = slice(&chars, id_i, ver_i);
         let current = slice(&chars, ver_i, avail_i);
         let available = slice(&chars, avail_i, src_i);
 
-        // A real row has an id (winget ids contain a dot) and an available version.
-        if id.contains('.') && !available.is_empty() {
+        // A real row has an id (winget ids contain a dot and no spaces) and an
+        // available version. Longer summary sentences fail this.
+        if id.contains('.') && !id.contains(char::is_whitespace) && !available.is_empty() {
             result.push(AppUpdate {
                 name,
                 id,
@@ -146,7 +162,6 @@ pub fn upgrade_all() -> InstallResult {
     run_winget(&[
         "upgrade",
         "--all",
-        "--include-unknown",
         "--accept-source-agreements",
         "--accept-package-agreements",
         "--silent",
@@ -161,6 +176,24 @@ mod tests {
     #[test]
     fn unreadable_output_is_an_error_not_an_empty_list() {
         assert!(parse_upgrade_table("Nom  Identifiant  Version\n").is_none());
+    }
+
+    #[test]
+    fn reads_a_translated_table_after_spinner_frames() {
+        let text = [
+            "   -\r   \\\r     \rNom       ID           Versión  Disponible  Origen",
+            "-------------------------------------------------",
+            "Mi Año    Vendor.App   1.0      2.0         winget",
+            "1 actualizaciones disponibles.",
+            "",
+        ]
+        .join("\r\n");
+        let list = parse_upgrade_table(&text).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "Mi Año");
+        assert_eq!(list[0].id, "Vendor.App");
+        assert_eq!(list[0].current, "1.0");
+        assert_eq!(list[0].available, "2.0");
     }
 
     // Read-only: `winget upgrade` with no id only lists, it installs nothing.

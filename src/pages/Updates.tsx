@@ -65,7 +65,10 @@ export function Updates() {
 
   if (!items && !error) return <Loading label="Checking for updates" />;
 
-  const count = items?.length ?? 0;
+  const total = items?.length ?? 0;
+  // winget cannot tell which version these have, so "Update all" leaves them out.
+  const isUnknown = (i: AppUpdate) => i.current.trim().toLowerCase() === "unknown";
+  const count = items?.filter((i) => !isUnknown(i)).length ?? 0;
 
   return (
     <div>
@@ -91,7 +94,7 @@ export function Updates() {
 
       {error && <ErrorBanner message={error} />}
 
-      {error && count === 0 ? null : count === 0 ? (
+      {error && total === 0 ? null : total === 0 ? (
         <EmptyState
           icon={<CheckCircle2 size={30} />}
           title="Everything is up to date"
@@ -107,7 +110,8 @@ export function Updates() {
               </span>
               <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                 <span className="mono muted" style={{ fontSize: "var(--text-meta)" }}>
-                  {item.current} <span style={{ opacity: 0.6 }}>→</span>{" "}
+                  {isUnknown(item) ? "version unknown" : item.current}{" "}
+                  <span style={{ opacity: 0.6 }}>→</span>{" "}
                   <span style={{ color: "var(--accent-text)", fontWeight: 600 }}>{item.available}</span>
                 </span>
                 <button className="btn sm" onClick={() => upgradeOne(item)} disabled={busy}>
@@ -143,6 +147,8 @@ export function Updates() {
           <p>
             This updates {count} app{count === 1 ? "" : "s"} with winget. Some may ask for
             administrator permission. It can take a few minutes.
+            {count < total &&
+              " Apps whose current version is unknown are skipped. Use their own Update button."}
           </p>
         </Modal>
       )}

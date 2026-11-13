@@ -1,15 +1,15 @@
-// Startup Manager: list programs that run at sign-in and toggle the user-scope
-// ones on or off. System-wide entries are shown read-only (they need admin).
+// Startup Manager: list programs that run at sign-in and toggle them on or off.
+// System-wide entries are read-only unless NEXUS runs as administrator.
 
 import { useEffect, useState } from "react";
-import { Power } from "lucide-react";
+import { Power, RefreshCw } from "lucide-react";
 import { api } from "../api";
 import type { StartupItem } from "../types";
 import { useNexus } from "../state";
 import { Loading, ErrorBanner, EmptyState } from "../components/ui";
 
 export function Startup() {
-  const { setNotice } = useNexus();
+  const { setNotice, elevated, restartAsAdmin } = useNexus();
   const [items, setItems] = useState<StartupItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -47,19 +47,30 @@ export function Startup() {
 
   return (
     <div>
-      <div className="page-head">
-        <h1>Startup Manager</h1>
-        <p>Choose which programs run when you sign in. Fewer means a faster boot.</p>
+      <div className="page-head spread">
+        <div>
+          <h1>Startup Manager</h1>
+          <p>Choose which programs run when you sign in. Fewer means a faster boot.</p>
+        </div>
+        <button className="btn" onClick={load}>
+          <RefreshCw size={15} /> Refresh
+        </button>
       </div>
 
       {error && <ErrorBanner message={error} />}
 
       <div className="note-banner">
         <Power size={16} />
-        <span>
-          {enabledCount} of {items?.length ?? 0} startup programs are enabled. System-wide
-          entries are read-only here because changing them needs administrator rights.
+        <span style={{ flex: 1 }}>
+          {enabledCount} of {items?.length ?? 0} startup programs are enabled.
+          {!elevated &&
+            " System-wide entries are read-only here because changing them needs administrator rights."}
         </span>
+        {!elevated && (
+          <button className="btn sm" onClick={restartAsAdmin} style={{ flexShrink: 0 }}>
+            Restart as admin
+          </button>
+        )}
       </div>
 
       {items && items.length === 0 ? (

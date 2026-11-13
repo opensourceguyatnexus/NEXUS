@@ -47,11 +47,14 @@ interface NexusState {
   setNotice: (s: string | null) => void;
   restartAsAdmin: () => Promise<void>;
   job: Job | null;
+  lastJobResult: string | null;
+  clearJobResult: () => void;
   runJob: (job: Job, work: (update: (label: string) => void) => Promise<void>) => Promise<void>;
   setupSelection: Set<string>;
   setSetupSelection: (next: Set<string>) => void;
   iconFor: (app: UnifiedApp) => string | undefined;
   refresh: () => Promise<void>;
+  rescanApps: () => Promise<void>;
   launch: (app: UnifiedApp) => Promise<void>;
   locateAndLaunch: (app: UnifiedApp) => Promise<void>;
   toggleFavorite: (id: string) => Promise<void>;
@@ -102,6 +105,10 @@ function pathsOf(detected: DetectedApp[], custom: CustomApp[]): string[] {
   return [...set];
 }
 
+export function isFailure(message: string): boolean {
+  return /fail|could not|cannot|can't|error/i.test(message);
+}
+
 export function NexusProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [detected, setDetected] = useState<DetectedApp[]>([]);
@@ -114,21 +121,44 @@ export function NexusProvider({ children }: { children: ReactNode }) {
   const noticeTimer = useRef<number | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const jobRunning = useRef(false);
+  const jobNotice = useRef<string | null>(null);
+  const [lastJobResult, setLastJobResult] = useState<string | null>(null);
   const [setupSelection, setSetupSelection] = useState<Set<string>>(new Set());
 
-  const flashNotice = useCallback((s: string | null) => {
+  const flashNotice = useCallback((s: string | null, fromPage = false) => {
     setNotice(s);
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
-    if (s) noticeTimer.current = window.setTimeout(() => setNotice(null), 3400);
+    noticeTimer.current = null;
+    if (!s) return;
+    // A message a page sends while a long job runs is its result: it is kept
+    // in the banner after the job ends, so the toast itself can fade.
+    if (fromPage && jobRunning.current) jobNotice.current = s;
+    else if (isFailure(s)) return;
+    const ms = Math.min(15000, Math.max(3400, s.length * 70));
+    noticeTimer.current = window.setTimeout(() => setNotice(null), ms);
   }, []);
 
+  const pageNotice = useCallback((s: string | null) => flashNotice(s, true), [flashNotice]);
+
+  const clearJobResult = useCallback(() => setLastJobResult(null), []);
+
+  // Until settings load, keep whatever index.html restored from the last run.
   useEffect(() => {
-    const t = settings?.theme === "dark" ? "dark" : "bright";
+    if (!settings) return;
+    const t = settings.theme === "dark" ? "dark" : "bright";
     document.documentElement.setAttribute("data-theme", t);
+    try {
+      localStorage.setItem("nexus-theme", t);
+    } catch {}
   }, [settings?.theme]);
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-accent", settings?.accent ?? "blue");
+    if (!settings) return;
+    const a = settings.accent || "blue";
+    document.documentElement.setAttribute("data-accent", a);
+    try {
+      localStorage.setItem("nexus-accent", a);
+    } catch {}
   }, [settings?.accent]);
 
   const loadIcons = useCallback(async (paths: string[]) => {
@@ -221,17 +251,44 @@ export function NexusProvider({ children }: { children: ReactNode }) {
     [flashNotice, loadIcons]
   );
 
-  const toggleFavorite = useCallback(async (id: string) => {
-    setSettings(await api.toggleFavorite(id));
-  }, []);
+  const rescanApps = useCallback(async () => {
+    const found = await api.getCatalogApps();
+    setDetected(found);
+    loadIcons(pathsOf(found, settings?.custom_apps ?? []));
+  }, [loadIcons, settings]);
 
-  const setTheme = useCallback(async (theme: string) => {
-    setSettings(await api.setTheme(theme));
-  }, []);
+  const toggleFavorite = useCallback(
+    async (id: string) => {
+      try {
+        setSettings(await api.toggleFavorite(id));
+      } catch (e) {
+        flashNotice(`Could not save: ${e}`);
+      }
+    },
+    [flashNotice]
+  );
 
-  const setAccent = useCallback(async (accent: string) => {
-    setSettings(await api.setAccent(accent));
-  }, []);
+  const setTheme = useCallback(
+    async (theme: string) => {
+      try {
+        setSettings(await api.setTheme(theme));
+      } catch (e) {
+        flashNotice(`Could not save: ${e}`);
+      }
+    },
+    [flashNotice]
+  );
+
+  const setAccent = useCallback(
+    async (accent: string) => {
+      try {
+        setSettings(await api.setAccent(accent));
+      } catch (e) {
+        flashNotice(`Could not save: ${e}`);
+      }
+    },
+    [flashNotice]
+  );
 
   const addCustomApp = useCallback(
     async (app: CustomApp) => {
@@ -245,8 +302,12 @@ export function NexusProvider({ children }: { children: ReactNode }) {
 
   const removeCustomApp = useCallback(
     async (id: string) => {
-      setSettings(await api.removeCustomApp(id));
-      flashNotice("Removed custom app.");
+      try {
+        setSettings(await api.removeCustomApp(id));
+        flashNotice("Removed custom app.");
+      } catch (e) {
+        flashNotice(`Could not save: ${e}`);
+      }
     },
     [flashNotice]
   );
@@ -275,6 +336,10 @@ export function NexusProvider({ children }: { children: ReactNode }) {
   );
 
   const restartAsAdmin = useCallback(async () => {
+    if (jobRunning.current) {
+      flashNotice("Wait for the current install or update to finish before restarting.");
+      return;
+    }
     try {
       await api.restartAsAdmin();
     } catch (e) {
@@ -285,12 +350,15 @@ export function NexusProvider({ children }: { children: ReactNode }) {
   const runJob = useCallback<NexusState["runJob"]>(async (next, work) => {
     if (jobRunning.current) return;
     jobRunning.current = true;
+    jobNotice.current = null;
+    setLastJobResult(null);
     setJob(next);
     try {
       await work((label) => setJob({ id: next.id, label }));
     } finally {
       jobRunning.current = false;
       setJob(null);
+      setLastJobResult(jobNotice.current);
     }
   }, []);
 
@@ -303,14 +371,17 @@ export function NexusProvider({ children }: { children: ReactNode }) {
     loading,
     error,
     notice,
-    setNotice: flashNotice,
+    setNotice: pageNotice,
     restartAsAdmin,
     job,
+    lastJobResult,
+    clearJobResult,
     runJob,
     setupSelection,
     setSetupSelection,
     iconFor,
     refresh,
+    rescanApps,
     launch,
     locateAndLaunch,
     toggleFavorite,

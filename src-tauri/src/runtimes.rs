@@ -38,8 +38,8 @@ struct Spec {
 fn specs() -> Vec<Spec> {
     vec![
         // Visual C++ (modern)
-        Spec { id: "vc-2015-2022-x64", name: "Visual C++ 2015-2022 (x64)", description: "Runtime for most modern apps and games (64-bit).", group: "Visual C++", winget_id: "Microsoft.VCRedist.2015+.x64", matches: &["2015-2022 redistributable (x64)", "2022 redistributable (x64)", "2019 redistributable (x64)"] },
-        Spec { id: "vc-2015-2022-x86", name: "Visual C++ 2015-2022 (x86)", description: "Runtime for most modern apps and games (32-bit).", group: "Visual C++", winget_id: "Microsoft.VCRedist.2015+.x86", matches: &["2015-2022 redistributable (x86)", "2022 redistributable (x86)", "2019 redistributable (x86)"] },
+        Spec { id: "vc-2015-2022-x64", name: "Visual C++ 2015-2022 (x64)", description: "Runtime for most modern apps and games (64-bit).", group: "Visual C++", winget_id: "Microsoft.VCRedist.2015+.x64", matches: &["v14 redistributable (x64)", "2015-2022 redistributable (x64)", "2022 redistributable (x64)", "2019 redistributable (x64)"] },
+        Spec { id: "vc-2015-2022-x86", name: "Visual C++ 2015-2022 (x86)", description: "Runtime for most modern apps and games (32-bit).", group: "Visual C++", winget_id: "Microsoft.VCRedist.2015+.x86", matches: &["v14 redistributable (x86)", "2015-2022 redistributable (x86)", "2022 redistributable (x86)", "2019 redistributable (x86)"] },
         // Visual C++ (legacy, still needed by many games)
         Spec { id: "vc-2013-x64", name: "Visual C++ 2013 (x64)", description: "Legacy runtime required by some older games.", group: "Visual C++", winget_id: "Microsoft.VCRedist.2013.x64", matches: &["2013 redistributable (x64)", "2013 x64"] },
         Spec { id: "vc-2013-x86", name: "Visual C++ 2013 (x86)", description: "Legacy runtime required by some older games.", group: "Visual C++", winget_id: "Microsoft.VCRedist.2013.x86", matches: &["2013 redistributable (x86)", "2013 x86"] },
@@ -47,8 +47,8 @@ fn specs() -> Vec<Spec> {
         Spec { id: "vc-2012-x86", name: "Visual C++ 2012 (x86)", description: "Legacy runtime.", group: "Visual C++", winget_id: "Microsoft.VCRedist.2012.x86", matches: &["2012 redistributable (x86)", "2012 x86"] },
         Spec { id: "vc-2010-x64", name: "Visual C++ 2010 (x64)", description: "Legacy runtime.", group: "Visual C++", winget_id: "Microsoft.VCRedist.2010.x64", matches: &["2010 redistributable (x64)", "2010 x64"] },
         Spec { id: "vc-2010-x86", name: "Visual C++ 2010 (x86)", description: "Legacy runtime.", group: "Visual C++", winget_id: "Microsoft.VCRedist.2010.x86", matches: &["2010 redistributable (x86)", "2010 x86"] },
-        Spec { id: "vc-2008-x64", name: "Visual C++ 2008 (x64)", description: "Legacy runtime.", group: "Visual C++", winget_id: "Microsoft.VCRedist.2008.x64", matches: &["2008 redistributable (x64)", "2008 x64"] },
-        Spec { id: "vc-2008-x86", name: "Visual C++ 2008 (x86)", description: "Legacy runtime.", group: "Visual C++", winget_id: "Microsoft.VCRedist.2008.x86", matches: &["2008 redistributable (x86)", "2008 x86"] },
+        Spec { id: "vc-2008-x64", name: "Visual C++ 2008 (x64)", description: "Legacy runtime.", group: "Visual C++", winget_id: "Microsoft.VCRedist.2008.x64", matches: &["2008 redistributable (x64)", "2008 redistributable - x64", "2008 x64"] },
+        Spec { id: "vc-2008-x86", name: "Visual C++ 2008 (x86)", description: "Legacy runtime.", group: "Visual C++", winget_id: "Microsoft.VCRedist.2008.x86", matches: &["2008 redistributable (x86)", "2008 redistributable - x86", "2008 x86"] },
         // DirectX
         Spec { id: "directx", name: "DirectX End-User Runtime", description: "Legacy DirectX components (d3dx9 and others) many games need.", group: "DirectX", winget_id: "Microsoft.DirectX", matches: &[] },
         // .NET
@@ -58,7 +58,11 @@ fn specs() -> Vec<Spec> {
 }
 
 pub fn list_runtimes() -> Vec<RuntimeItem> {
-    let names = installed_display_names();
+    // Some installers register names with doubled spaces ("2010  x64").
+    let names: Vec<String> = installed_display_names()
+        .iter()
+        .map(|n| n.split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect();
     specs()
         .into_iter()
         .map(|s| {

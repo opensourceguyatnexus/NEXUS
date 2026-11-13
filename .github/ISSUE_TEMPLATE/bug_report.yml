@@ -1,0 +1,56 @@
+name: Report a bug
+description: Something in NEXUS doesn't work the way it should.
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: NEXUS version
+      description: Shown at the bottom of the sidebar.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 24H2"
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Page or launcher
+      description: Where it happened, for example Account Switcher with Epic Games, or Disk Manager.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What you did
+      description: The steps that lead to the problem.
+      placeholder: |
+        1. Open ...
+        2. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Include the exact message NEXUS showed, if any.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safe
+    attributes:
+      label: Before you send
+      options:
+        - label: I have not pasted tokens, passwords or files from %LOCALAPPDATA%\NEXUS\accounts
+          required: true

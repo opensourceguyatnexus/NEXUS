@@ -3,7 +3,7 @@
 // organized by clear category headers.
 
 import { useMemo, useState } from "react";
-import { Plus, Search, X, Sparkles } from "lucide-react";
+import { Plus, RefreshCw, Search, X, Sparkles } from "lucide-react";
 import type { UnifiedApp } from "../state";
 import { useNexus } from "../state";
 import { AppCard } from "../components/AppCard";
@@ -34,8 +34,10 @@ function AddCustomForm({ onClose }: { onClose: () => void }) {
   const [desc, setDesc] = useState("");
   const [url, setUrl] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const save = async () => {
+    if (saving) return;
     if (!name.trim()) return setErr("Give the app a name.");
     if (!exec.trim()) return setErr("Enter the full path to the executable.");
     if (!/\.exe"?$/i.test(exec.trim())) return setErr("The path should point to an .exe file.");
@@ -44,15 +46,21 @@ function AddCustomForm({ onClose }: { onClose: () => void }) {
       name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") +
       "-" +
       Date.now().toString(36);
-    await addCustomApp({
-      id,
-      name: name.trim(),
-      category,
-      description: desc.trim() || "Custom application.",
-      exec_path: exec.trim().replace(/^"|"$/g, ""),
-      download_url: url.trim(),
-    });
-    onClose();
+    setSaving(true);
+    try {
+      await addCustomApp({
+        id,
+        name: name.trim(),
+        category,
+        description: desc.trim() || "Custom application.",
+        exec_path: exec.trim().replace(/^"|"$/g, ""),
+        download_url: url.trim(),
+      });
+      onClose();
+    } catch (e) {
+      setErr(`Could not save: ${e}`);
+      setSaving(false);
+    }
   };
 
   return (
@@ -100,7 +108,7 @@ function AddCustomForm({ onClose }: { onClose: () => void }) {
         <input type="text" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" />
       </div>
       <div className="btn-row">
-        <button className="btn primary" onClick={save}>
+        <button className="btn primary" onClick={save} disabled={saving}>
           Save app
         </button>
         <button className="btn ghost" onClick={onClose}>
@@ -112,7 +120,19 @@ function AddCustomForm({ onClose }: { onClose: () => void }) {
 }
 
 export function Applications() {
-  const { apps, hardware, loading } = useNexus();
+  const { apps, hardware, loading, rescanApps, setNotice } = useNexus();
+  const [scanning, setScanning] = useState(false);
+
+  const rescan = async () => {
+    setScanning(true);
+    try {
+      await rescanApps();
+    } catch (e) {
+      setNotice(`Could not rescan: ${e}`);
+    } finally {
+      setScanning(false);
+    }
+  };
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<string>("all");
   const [installedOnly, setInstalledOnly] = useState(false);
@@ -128,11 +148,16 @@ export function Applications() {
     return parts.join(" ").toLowerCase();
   }, [hardware]);
 
+  const gpuBlob = useMemo(
+    () => (hardware ? hardware.gpus.map((g) => g.name).join(" ").toLowerCase() : ""),
+    [hardware]
+  );
+
   const recommended = useMemo(() => {
     if (!hwBlob) return [] as UnifiedApp[];
     const vendorKeys: Record<string, string[]> = {
       "nvidia-app": ["nvidia", "geforce", "rtx", "gtx"],
-      "amd-adrenalin": ["radeon", "amd "],
+      "amd-adrenalin": ["radeon", "amd"],
       "razer-synapse": ["razer"],
       "logitech-ghub": ["logitech"],
       "steelseries-gg": ["steelseries"],
@@ -141,11 +166,14 @@ export function Applications() {
       "armoury-crate": ["asus", "rog"],
       "msi-center": ["msi"],
     };
+    // The graphics apps only make sense for a matching graphics card, not a matching CPU.
+    const gpuOnly = ["nvidia-app", "amd-adrenalin"];
     return apps.filter((a) => {
       const keys = vendorKeys[a.id];
-      return keys && keys.some((k) => hwBlob.includes(k));
+      const blob = gpuOnly.includes(a.id) ? gpuBlob : hwBlob;
+      return keys && keys.some((k) => new RegExp(`\\b${k}\\b`).test(blob));
     });
-  }, [apps, hwBlob]);
+  }, [apps, hwBlob, gpuBlob]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -172,9 +200,14 @@ export function Applications() {
           <h1>Applications</h1>
           <p>Find, launch, and manage your hardware and system apps in one place.</p>
         </div>
-        <button className="btn primary" onClick={() => setShowForm((s) => !s)}>
-          <Plus size={15} /> Add custom app
-        </button>
+        <div className="btn-row">
+          <button className="btn" onClick={rescan} disabled={scanning} title="Check again which apps are installed">
+            <RefreshCw size={14} className={scanning ? "spin" : ""} /> Rescan
+          </button>
+          <button className="btn primary" onClick={() => setShowForm((s) => !s)}>
+            <Plus size={15} /> Add custom app
+          </button>
+        </div>
       </div>
 
       {showForm && <AddCustomForm onClose={() => setShowForm(false)} />}

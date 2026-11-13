@@ -13,6 +13,7 @@ use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::os::windows::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -20,7 +21,13 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use sysinfo::{ProcessesToUpdate, System};
-use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_SET_VALUE};
+use winreg::enums::{HKEY_CLASSES_ROOT, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_SET_VALUE};
+use windows::core::{PCWSTR, PWSTR};
+use windows::Win32::Foundation::{LocalFree, HLOCAL};
+use windows::Win32::Security::Credentials::{
+    CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_PERSIST, CRED_TYPE_GENERIC,
+};
+use windows::Win32::Security::Cryptography::{CryptProtectData, CryptUnprotectData, CRYPT_INTEGER_BLOB};
 use winreg::RegKey;
 
 // How long a closed launcher gets to let go of its files.
@@ -76,7 +83,13 @@ struct Spec {
     games: &'static [&'static str],
     items: &'static [(Root, &'static str)],
     reg: Option<(&'static str, &'static str)>,
+    // A Windows Credential Manager entry that is part of the login.
+    cred: Option<&'static str>,
+    // Leftovers of the previous account, removed on a switch and never saved.
+    clear: &'static [(Root, &'static str)],
 }
+
+const EPIC_NEW_AUTH: &str = r"com.epicgames.eglv2\auth";
 
 const SPECS: &[Spec] = &[
     Spec {
@@ -103,6 +116,8 @@ const SPECS: &[Spec] = &[
             (Root::Local, r"Riot Games\Riot Client\Config\RiotClientSettings.yaml"),
         ],
         reg: None,
+        cred: None,
+        clear: &[],
     },
     Spec {
         id: "discord",
@@ -115,6 +130,8 @@ const SPECS: &[Spec] = &[
             (Root::Roaming, r"discord\Network"),
         ],
         reg: None,
+        cred: None,
+        clear: &[],
     },
     Spec {
         id: "epic",
@@ -124,8 +141,12 @@ const SPECS: &[Spec] = &[
         items: &[
             (Root::Local, r"EpicGamesLauncher\Saved\Config\WindowsEditor\GameUserSettings.ini"),
             (Root::Local, r"EpicGamesLauncher\Saved\Config\Windows\GameUserSettings.ini"),
+            // The newer launcher keeps its login here and in Credential Manager.
+            (Root::Local, EPIC_NEW_AUTH),
         ],
         reg: Some((r"Software\Epic Games\Unreal Engine\Identifiers", "AccountId")),
+        cred: Some("credentials.com.epicgames.eglv2.prod"),
+        clear: &[(Root::Local, r"com.epicgames.eglv2\EBWebView")],
     },
     Spec {
         id: "ubisoft",
@@ -138,6 +159,8 @@ const SPECS: &[Spec] = &[
             (Root::Local, r"Ubisoft Game Launcher\user.dat"),
         ],
         reg: None,
+        cred: None,
+        clear: &[],
     },
 ];
 
@@ -175,6 +198,8 @@ pub struct AccountPlatform {
     pub installed: bool,
     pub current: Option<String>,
     pub accounts: Vec<AccountEntry>,
+    // Set when the saved account list could not be read.
+    pub error: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -234,7 +259,13 @@ fn save_state(platform: &str, state: &PlatformState) -> Result<(), String> {
     fs::create_dir_all(&dir).map_err(|e| format!("Cannot create the accounts folder: {}", e))?;
     let text = serde_json::to_string_pretty(state).map_err(|e| e.to_string())?;
     let tmp = dir.join("state.json.tmp");
-    fs::write(&tmp, text).map_err(|e| format!("Cannot save the account list: {}", e))?;
+    // Flushed to disk before the rename, so a power cut cannot leave an empty list.
+    fs::File::create(&tmp)
+        .and_then(|mut file| {
+            file.write_all(text.as_bytes())?;
+            file.sync_all()
+        })
+        .map_err(|e| format!("Cannot save the account list: {}", e))?;
     fs::rename(&tmp, dir.join("state.json"))
         .map_err(|e| format!("Cannot save the account list: {}", e))
 }
@@ -401,6 +432,31 @@ fn ini_has_epic_login(bytes: &[u8]) -> bool {
     false
 }
 
+// The newer Epic launcher writes who is signed in as plain JSON. Its login also
+// needs the Credential Manager entry, so both must be there.
+fn parse_epic_new_identity(json: &str) -> Option<Identity> {
+    let json: serde_json::Value = serde_json::from_str(json.trim_start_matches('\u{feff}')).ok()?;
+    let info = json.pointer("/prod/account_info")?;
+    let text = |key: &str| {
+        info.get(key)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(String::from)
+    };
+    let label = text("display_name")?;
+    let id = text("id")
+        .or_else(|| text("account_id"))
+        .unwrap_or_else(|| format!("name:{}", label));
+    Some(Identity { label, id })
+}
+
+fn epic_new_identity(s: &Spec, roots: &Roots) -> Option<Identity> {
+    let file = roots.path(Root::Local, EPIC_NEW_AUTH).join("auth.json");
+    let identity = parse_epic_new_identity(&fs::read_to_string(file).ok()?)?;
+    read_cred(s.cred?).map(|_| identity)
+}
+
 fn current_identity(s: &Spec, roots: &Roots) -> Option<Identity> {
     match s.id {
         "riot" => s.items.iter().find_map(|(root, rel)| {
@@ -411,6 +467,9 @@ fn current_identity(s: &Spec, roots: &Roots) -> Option<Identity> {
             parse_riot_identity(&text)
         }),
         "epic" => {
+            if let Some(identity) = epic_new_identity(s, roots) {
+                return Some(identity);
+            }
             let (key, value) = s.reg?;
             let id: String = RegKey::predef(HKEY_CURRENT_USER)
                 .open_subkey(key)
@@ -477,16 +536,44 @@ fn program_files_x86() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(r"C:\Program Files (x86)"))
 }
 
+// Epic can be installed anywhere, so ask Windows what opens its links first, then
+// try the default folder, then a launcher that is running right now.
+fn epic_exe_from_command(command: &str) -> Option<PathBuf> {
+    let path = PathBuf::from(command.split('"').nth(1)?);
+    let is_launcher = path
+        .file_name()
+        .is_some_and(|n| n.eq_ignore_ascii_case("EpicGamesLauncher.exe"));
+    (is_launcher && path.is_file()).then_some(path)
+}
+
+fn epic_exe() -> Option<PathBuf> {
+    let existing = |p: PathBuf| p.is_file().then_some(p);
+    let base = program_files_x86().join(r"Epic Games\Launcher\Portal\Binaries");
+    let new_launcher = dirs::data_local_dir().map(|d| d.join(r"Epic Games\Launcher\EpicGamesLauncher.exe"));
+    RegKey::predef(HKEY_CLASSES_ROOT)
+        .open_subkey(r"com.epicgames.launcher\shell\open\command")
+        .ok()
+        .and_then(|k| k.get_value::<String, _>("").ok())
+        .and_then(|command| epic_exe_from_command(&command))
+        .or_else(|| existing(base.join(r"Win64\EpicGamesLauncher.exe")))
+        .or_else(|| existing(base.join(r"Win32\EpicGamesLauncher.exe")))
+        .or_else(|| new_launcher.and_then(existing))
+        .or_else(|| {
+            snapshot_processes().processes().values().find_map(|p| {
+                if !p.name().eq_ignore_ascii_case("EpicGamesLauncher.exe") {
+                    return None;
+                }
+                existing(p.exe()?.to_path_buf())
+            })
+        })
+}
+
 fn launcher_exe(id: &str) -> Option<PathBuf> {
     let existing = |p: PathBuf| p.is_file().then_some(p);
     match id {
         "riot" => riot_exe(),
         "discord" => newest_discord_exe(),
-        "epic" => {
-            let base = program_files_x86().join(r"Epic Games\Launcher\Portal\Binaries");
-            existing(base.join(r"Win64\EpicGamesLauncher.exe"))
-                .or_else(|| existing(base.join(r"Win32\EpicGamesLauncher.exe")))
-        }
+        "epic" => epic_exe(),
         "ubisoft" => {
             let from_reg: Option<String> = RegKey::predef(HKEY_LOCAL_MACHINE)
                 .open_subkey(r"SOFTWARE\WOW6432Node\Ubisoft\Launcher")
@@ -599,10 +686,15 @@ fn prepare_launcher(s: &Spec, roots: &Roots) -> Result<bool, String> {
         ));
     }
     let was_running = !running_of(&sys, s.exes).is_empty();
-    close_processes(s.name, s.exes, Duration::from_secs(12))?;
+    // Found before closing: a launcher known only from its running process is gone afterwards.
+    let exe = launcher_exe(s.id);
+    if let Err(e) = close_processes(s.name, s.exes, Duration::from_secs(12)) {
+        reopen_if_was_running(exe.as_deref(), was_running);
+        return Err(e);
+    }
     let items: Vec<PathBuf> = s.items.iter().map(|(root, rel)| roots.path(*root, rel)).collect();
     if let Err(locked) = wait_until_released(&items, FILE_RELEASE_WAIT) {
-        reopen_if_was_running(s, was_running);
+        reopen_if_was_running(exe.as_deref(), was_running);
         return Err(format!(
             "Another program is still using {}. Wait a few seconds and try again. Nothing was changed.",
             locked.display()
@@ -611,12 +703,12 @@ fn prepare_launcher(s: &Spec, roots: &Roots) -> Result<bool, String> {
     Ok(was_running)
 }
 
-fn reopen_if_was_running(s: &Spec, was_running: bool) {
+fn reopen_if_was_running(exe: Option<&Path>, was_running: bool) {
     if !was_running {
         return;
     }
-    if let Some(exe) = launcher_exe(s.id) {
-        let _ = launch_unelevated(&exe);
+    if let Some(exe) = exe {
+        let _ = launch_unelevated(exe);
     }
 }
 
@@ -679,6 +771,9 @@ fn capture(s: &Spec, roots: &Roots, dest: &Path, allow_empty: bool) -> Result<us
         if let Some(value) = read_reg(s) {
             fs::write(tmp.join("registry.txt"), value).map_err(|e| e.to_string())?;
         }
+        if let Some(saved) = s.cred.and_then(read_cred) {
+            fs::write(tmp.join(CRED_FILE), protect(&saved.to_bytes())?).map_err(|e| e.to_string())?;
+        }
         if copied == 0 && !allow_empty {
             return Err(format!("No login was found for {}. Sign in first.", s.name));
         }
@@ -713,7 +808,122 @@ fn restore_files(s: &Spec, roots: &Roots, snapshot: Option<&Path>) -> Result<(),
             }
         }
     }
-    Ok(())
+    for (root, rel) in s.clear {
+        // Only a cache: the launcher rebuilds it, so a leftover is not worth failing for.
+        let _ = remove_path(&roots.path(*root, rel));
+    }
+    restore_cred(s, snapshot)
+}
+
+// ---- Credential Manager ----
+
+const CRED_FILE: &str = "credential.bin";
+
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
+struct SavedCred {
+    user: String,
+    persist: u32,
+    blob: String,
+}
+
+impl SavedCred {
+    fn to_bytes(&self) -> Vec<u8> {
+        serde_json::to_vec(self).unwrap_or_default()
+    }
+}
+
+fn wide(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+fn read_cred(target: &str) -> Option<SavedCred> {
+    let name = wide(target);
+    let mut found: *mut CREDENTIALW = std::ptr::null_mut();
+    unsafe {
+        CredReadW(PCWSTR(name.as_ptr()), CRED_TYPE_GENERIC, 0, &mut found).ok()?;
+        let cred = &*found;
+        let blob = if cred.CredentialBlob.is_null() {
+            &[][..]
+        } else {
+            std::slice::from_raw_parts(cred.CredentialBlob, cred.CredentialBlobSize as usize)
+        };
+        let saved = SavedCred {
+            user: if cred.UserName.is_null() {
+                String::new()
+            } else {
+                cred.UserName.to_string().unwrap_or_default()
+            },
+            persist: cred.Persist.0,
+            blob: STANDARD.encode(blob),
+        };
+        CredFree(found as *const std::ffi::c_void);
+        Some(saved)
+    }
+}
+
+fn write_cred(target: &str, saved: &SavedCred) -> Result<(), String> {
+    let mut name = wide(target);
+    let mut user = wide(&saved.user);
+    let mut blob = STANDARD
+        .decode(&saved.blob)
+        .map_err(|_| "The saved login is damaged.".to_string())?;
+    let cred = CREDENTIALW {
+        Type: CRED_TYPE_GENERIC,
+        TargetName: PWSTR(name.as_mut_ptr()),
+        CredentialBlobSize: blob.len() as u32,
+        CredentialBlob: blob.as_mut_ptr(),
+        Persist: CRED_PERSIST(saved.persist),
+        UserName: PWSTR(user.as_mut_ptr()),
+        ..Default::default()
+    };
+    unsafe { CredWriteW(&cred, 0) }.map_err(|e| format!("Cannot write the saved login to Windows: {}", e))
+}
+
+fn delete_cred(target: &str) {
+    let name = wide(target);
+    // Already missing is the wanted result.
+    let _ = unsafe { CredDeleteW(PCWSTR(name.as_ptr()), CRED_TYPE_GENERIC, 0) };
+}
+
+// Saved copies of a credential are encrypted for this Windows user.
+fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
+    crypt(data, true).ok_or_else(|| "Windows could not protect the saved login.".to_string())
+}
+
+fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
+    crypt(data, false).ok_or_else(|| "Windows could not read the saved login.".to_string())
+}
+
+fn crypt(data: &[u8], encrypt: bool) -> Option<Vec<u8>> {
+    let input = CRYPT_INTEGER_BLOB {
+        cbData: data.len() as u32,
+        pbData: data.as_ptr() as *mut u8,
+    };
+    let mut output = CRYPT_INTEGER_BLOB::default();
+    unsafe {
+        if encrypt {
+            CryptProtectData(&input, PCWSTR::null(), None, None, None, 0, &mut output).ok()?;
+        } else {
+            CryptUnprotectData(&input, None, None, None, None, 0, &mut output).ok()?;
+        }
+        let bytes = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
+        let _ = LocalFree(HLOCAL(output.pbData as *mut std::ffi::c_void));
+        Some(bytes)
+    }
+}
+
+// Make the live credential match a snapshot; one with no credential removes it.
+fn restore_cred(s: &Spec, snapshot: Option<&Path>) -> Result<(), String> {
+    let Some(target) = s.cred else {
+        return Ok(());
+    };
+    let Some(bytes) = snapshot.and_then(|dir| fs::read(dir.join(CRED_FILE)).ok()) else {
+        delete_cred(target);
+        return Ok(());
+    };
+    let saved: SavedCred = serde_json::from_slice(&unprotect(&bytes)?)
+        .map_err(|_| "The saved login is damaged.".to_string())?;
+    write_cred(target, &saved)
 }
 
 fn read_reg(s: &Spec) -> Option<String> {
@@ -813,6 +1023,8 @@ pub fn save_current(platform: &str, name: &str) -> Result<(), String> {
     if s.id == "discord" && live_discord_login(&roots) == DiscordLogin::SignedOut {
         return Err(DISCORD_NO_LOGIN.into());
     }
+    let mut state = load_state(s.id)?;
+    let exe = launcher_exe(s.id);
     let was_running = prepare_launcher(s, &roots)?;
     let result = (|| -> Result<(), String> {
         let identity = current_identity(s, &roots);
@@ -823,7 +1035,6 @@ pub fn save_current(platform: &str, name: &str) -> Result<(), String> {
                 s.name
             ));
         }
-        let mut state = load_state(s.id)?;
         let identity_id = identity.map(|i| i.id);
         // Saving the same account again updates it instead of making a duplicate.
         // Without an account id, the same name is what marks it as the same one.
@@ -839,6 +1050,16 @@ pub fn save_current(platform: &str, name: &str) -> Result<(), String> {
                 None => p.name.eq_ignore_ascii_case(&name),
             })
             .map(|p| p.id.clone());
+        let holds_known_account = state
+            .profiles
+            .iter()
+            .any(|p| Some(&p.id) == existing.as_ref() && p.identity.is_some());
+        if identity_id.is_none() && holds_known_account {
+            return Err(format!(
+                "{} hasn't finished saving this login, so NEXUS can't tell if it is the account already saved as \"{}\". Wait about a minute and try again, or use a different name. Nothing was changed.",
+                s.name, name
+            ));
+        }
         let id = existing.clone().unwrap_or_else(new_profile_id);
         capture(s, &roots, &profile_dir(s.id, &id)?, false)?;
         if existing.is_some() {
@@ -860,7 +1081,7 @@ pub fn save_current(platform: &str, name: &str) -> Result<(), String> {
         state.active = Some(id);
         save_state(s.id, &state)
     })();
-    reopen_if_was_running(s, was_running);
+    reopen_if_was_running(exe.as_deref(), was_running);
     result
 }
 
@@ -872,6 +1093,9 @@ pub fn switch_to(platform: &str, profile: &str) -> Result<(), String> {
     let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     if platform == "steam" {
         return steam_switch(profile);
+    }
+    if platform == BNET_ID {
+        return bnet_change(Some(profile));
     }
     let s = spec(platform)?;
     let roots = Roots::real()?;
@@ -893,12 +1117,13 @@ pub fn switch_to(platform: &str, profile: &str) -> Result<(), String> {
     let was_running = prepare_launcher(s, &roots)?;
     refresh_saved_session(s, &roots, &mut state);
     if let Err(e) = apply_login(s, &roots, Some(&dir)) {
-        reopen_if_was_running(s, was_running);
+        reopen_if_was_running(Some(&exe), was_running);
         return Err(e);
     }
     state.active = Some(profile.to_string());
-    save_state(s.id, &state)?;
-    launch_unelevated(&exe)
+    let saved = save_state(s.id, &state);
+    launch_unelevated(&exe)?;
+    saved.map_err(|e| format!("The account was switched, but the list could not be updated. {}", e))
 }
 
 // Sign out so a different account can be signed in. The previous login stays
@@ -907,6 +1132,9 @@ pub fn add_new(platform: &str) -> Result<(), String> {
     let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     if platform == "steam" {
         return steam_add_new();
+    }
+    if platform == BNET_ID {
+        return bnet_change(None);
     }
     let s = spec(platform)?;
     let roots = Roots::real()?;
@@ -918,12 +1146,13 @@ pub fn add_new(platform: &str) -> Result<(), String> {
     let was_running = prepare_launcher(s, &roots)?;
     refresh_saved_session(s, &roots, &mut state);
     if let Err(e) = apply_login(s, &roots, None) {
-        reopen_if_was_running(s, was_running);
+        reopen_if_was_running(Some(&exe), was_running);
         return Err(e);
     }
     state.active = None;
-    save_state(s.id, &state)?;
-    launch_unelevated(&exe)
+    let saved = save_state(s.id, &state);
+    launch_unelevated(&exe)?;
+    saved.map_err(|e| format!("You were signed out, but the list could not be updated. {}", e))
 }
 
 pub fn delete_saved(platform: &str, profile: &str) -> Result<(), String> {
@@ -1109,32 +1338,54 @@ fn steam_switch(steam_id: &str) -> Result<(), String> {
         .find(|u| u.id == steam_id)
         .ok_or("Steam no longer remembers this account.")?;
     refuse_if_steam_game_running()?;
+    let was_running = steam_is_running();
     close_steam(&exe)?;
-    // Read again: Steam rewrites this file as it exits.
-    let text = fs::read_to_string(&vdf).map_err(|e| format!("Cannot read Steam's accounts: {}", e))?;
-    fs::write(root.join(r"config\loginusers.vdf.nexus-backup"), &text)
-        .map_err(|e| format!("Cannot back up Steam's accounts: {}", e))?;
-    let tmp = root.join(r"config\loginusers.vdf.nexus-tmp");
-    fs::write(&tmp, set_most_recent(&text, steam_id))
-        .map_err(|e| format!("Cannot update Steam's accounts: {}", e))?;
-    fs::rename(&tmp, &vdf).map_err(|e| format!("Cannot update Steam's accounts: {}", e))?;
-    let key = steam_key().ok_or("Cannot open Steam's registry settings.")?;
-    key.set_value("AutoLoginUser", &account.account)
-        .map_err(|e| format!("Cannot update Steam's settings: {}", e))?;
-    key.set_value("RememberPassword", &1u32)
-        .map_err(|e| format!("Cannot update Steam's settings: {}", e))?;
-    launch_unelevated(&exe)
+    let result = (|| -> Result<(), String> {
+        // Read again: Steam rewrites this file as it exits.
+        let text = fs::read_to_string(&vdf).map_err(|e| format!("Cannot read Steam's accounts: {}", e))?;
+        fs::write(root.join(r"config\loginusers.vdf.nexus-backup"), &text)
+            .map_err(|e| format!("Cannot back up Steam's accounts: {}", e))?;
+        let tmp = root.join(r"config\loginusers.vdf.nexus-tmp");
+        fs::write(&tmp, set_most_recent(&text, steam_id))
+            .map_err(|e| format!("Cannot update Steam's accounts: {}", e))?;
+        fs::rename(&tmp, &vdf).map_err(|e| format!("Cannot update Steam's accounts: {}", e))?;
+        let key = steam_key().ok_or("Cannot open Steam's registry settings.")?;
+        key.set_value("AutoLoginUser", &account.account)
+            .map_err(|e| format!("Cannot update Steam's settings: {}", e))?;
+        key.set_value("RememberPassword", &1u32)
+            .map_err(|e| format!("Cannot update Steam's settings: {}", e))
+    })();
+    reopen_after(&exe, was_running, result)
+}
+
+fn steam_is_running() -> bool {
+    !running_of(&snapshot_processes(), &["steam.exe"]).is_empty()
+}
+
+// The launcher is closed by now. After a failure it only comes back if it was open before.
+fn reopen_after(exe: &Path, was_running: bool, result: Result<(), String>) -> Result<(), String> {
+    if let Err(e) = result {
+        if was_running {
+            let _ = launch_unelevated(exe);
+        }
+        return Err(e);
+    }
+    launch_unelevated(exe)
 }
 
 // An empty auto-login user makes Steam show its own account picker.
 fn steam_add_new() -> Result<(), String> {
     let (exe, _) = steam_paths().ok_or("Steam was not found.")?;
     refuse_if_steam_game_running()?;
+    let was_running = steam_is_running();
     close_steam(&exe)?;
-    let key = steam_key().ok_or("Cannot open Steam's registry settings.")?;
-    key.set_value("AutoLoginUser", &String::new())
-        .map_err(|e| format!("Cannot update Steam's settings: {}", e))?;
-    launch_unelevated(&exe)
+    let result = steam_key()
+        .ok_or_else(|| "Cannot open Steam's registry settings.".to_string())
+        .and_then(|key| {
+            key.set_value("AutoLoginUser", &String::new())
+                .map_err(|e| format!("Cannot update Steam's settings: {}", e))
+        });
+    reopen_after(&exe, was_running, result)
 }
 
 fn steam_platform(sys: &System) -> Option<AccountPlatform> {
@@ -1171,6 +1422,174 @@ fn steam_platform(sys: &System) -> Option<AccountPlatform> {
         installed: true,
         current,
         accounts,
+        error: None,
+    })
+}
+
+// ---- Battle.net ----
+//
+// Battle.net keeps every account that ticked "Keep me logged in" and signs in to
+// the first name in its settings file, so switching only changes that order.
+// NEXUS also remembers the names itself, because an empty list (used to reach the
+// sign-in screen) would otherwise hide them.
+
+const BNET_ID: &str = "battlenet";
+const BNET_EXES: &[&str] = &["Battle.net.exe"];
+const BNET_GAMES: &[&str] = &[
+    "Overwatch.exe",
+    "Wow.exe",
+    "WowClassic.exe",
+    "Diablo IV.exe",
+    "D2R.exe",
+    "Hearthstone.exe",
+    "SC2_x64.exe",
+    "cod.exe",
+];
+const BNET_NAMES: &str = "/Client/SavedAccountNames";
+
+fn bnet_exe() -> Option<PathBuf> {
+    let in_dir = |dir: &Path| {
+        ["Battle.net Launcher.exe", "Battle.net.exe"]
+            .iter()
+            .map(|name| dir.join(name))
+            .find(|p| p.is_file())
+    };
+    let from_reg: Option<String> = RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey(r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Battle.net")
+        .ok()
+        .and_then(|k| k.get_value("InstallLocation").ok());
+    from_reg
+        .and_then(|dir| in_dir(Path::new(&dir)))
+        .or_else(|| in_dir(&program_files_x86().join("Battle.net")))
+}
+
+fn bnet_config_file() -> Option<PathBuf> {
+    dirs::data_dir().map(|d| d.join(r"Battle.net\Battle.net.config"))
+}
+
+fn bnet_read_config(file: &Path) -> Result<serde_json::Value, String> {
+    let text = fs::read_to_string(file).map_err(|e| format!("Cannot read Battle.net's settings: {}", e))?;
+    serde_json::from_str(text.trim_start_matches('\u{feff}'))
+        .map_err(|_| "Battle.net's settings could not be understood. Nothing was changed.".to_string())
+}
+
+fn bnet_names(config: &serde_json::Value) -> Vec<String> {
+    config
+        .pointer(BNET_NAMES)
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+// `first` signs in next; `None` empties the list so Battle.net asks who to sign in.
+fn bnet_reordered(names: &[String], first: Option<&str>) -> String {
+    let Some(first) = first else {
+        return String::new();
+    };
+    let mut ordered = vec![first.to_string()];
+    ordered.extend(names.iter().filter(|n| !n.eq_ignore_ascii_case(first)).cloned());
+    ordered.join(",")
+}
+
+fn bnet_remember(state: &mut PlatformState, names: &[String]) {
+    for name in names {
+        if !state.profiles.iter().any(|p| p.name.eq_ignore_ascii_case(name)) {
+            state.profiles.push(SavedProfile {
+                id: new_profile_id(),
+                name: name.clone(),
+                saved_at: now_secs(),
+                identity: None,
+            });
+        }
+    }
+}
+
+fn bnet_write_names(file: &Path, state: &mut PlatformState, first: Option<&str>) -> Result<(), String> {
+    // Read after closing: Battle.net rewrites this file as it runs.
+    let mut config = bnet_read_config(file)?;
+    let names = bnet_names(&config);
+    bnet_remember(state, &names);
+    save_state(BNET_ID, state)?;
+    if let Some(first) = first {
+        if !state.profiles.iter().any(|p| p.name.eq_ignore_ascii_case(first)) {
+            return Err("Battle.net no longer remembers this account.".into());
+        }
+    }
+    let value = config
+        .pointer_mut("/Client")
+        .and_then(|client| client.as_object_mut())
+        .ok_or("Battle.net's settings could not be understood. Nothing was changed.")?;
+    value.insert(
+        "SavedAccountNames".into(),
+        serde_json::Value::String(bnet_reordered(&names, first)),
+    );
+    let text = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    fs::copy(file, file.with_extension("config.nexus-backup"))
+        .map_err(|e| format!("Cannot back up Battle.net's settings: {}", e))?;
+    let tmp = file.with_extension("config.nexus-tmp");
+    fs::write(&tmp, text).map_err(|e| format!("Cannot update Battle.net's settings: {}", e))?;
+    fs::rename(&tmp, file).map_err(|e| format!("Cannot update Battle.net's settings: {}", e))
+}
+
+fn bnet_change(first: Option<&str>) -> Result<(), String> {
+    let exe = bnet_exe().ok_or("Battle.net isn't installed. Nothing was changed.")?;
+    let file = bnet_config_file().ok_or("Cannot find the app data folder.")?;
+    let mut state = load_state(BNET_ID)?;
+    let sys = snapshot_processes();
+    if let Some(game) = running_of(&sys, BNET_GAMES).first() {
+        return Err(format!("{} is running. Close your game first. Nothing was changed.", game));
+    }
+    let was_running = !running_of(&sys, BNET_EXES).is_empty();
+    if let Err(e) = close_processes("Battle.net", BNET_EXES, Duration::from_secs(12)) {
+        reopen_if_was_running(Some(&exe), was_running);
+        return Err(e);
+    }
+    let result = bnet_write_names(&file, &mut state, first);
+    reopen_after(&exe, was_running, result)
+}
+
+fn bnet_platform(sys: &System) -> Option<AccountPlatform> {
+    let installed = bnet_exe().is_some();
+    let (state, error) = match load_state(BNET_ID) {
+        Ok(state) => (state, None),
+        Err(e) => (PlatformState::default(), Some(e)),
+    };
+    let listed = bnet_config_file()
+        .and_then(|file| bnet_read_config(&file).ok())
+        .map(|config| bnet_names(&config))
+        .unwrap_or_default();
+    if !installed && listed.is_empty() && state.profiles.is_empty() && error.is_none() {
+        return None;
+    }
+    let is_listed = |name: &str| listed.iter().any(|n| n.eq_ignore_ascii_case(name));
+    let mut names = listed.clone();
+    names.extend(state.profiles.iter().map(|p| p.name.clone()).filter(|n| !is_listed(n)));
+    let current = listed.first().cloned();
+    let accounts = names
+        .into_iter()
+        .map(|name| AccountEntry {
+            active: current.as_deref().is_some_and(|c| c.eq_ignore_ascii_case(&name)),
+            remembered: is_listed(&name),
+            id: name.clone(),
+            name,
+            detail: String::new(),
+            avatar: None,
+        })
+        .collect();
+    Some(AccountPlatform {
+        id: BNET_ID.into(),
+        name: "Battle.net".into(),
+        running: !running_of(sys, BNET_EXES).is_empty(),
+        managed: false,
+        verified: true,
+        installed,
+        current,
+        accounts,
+        error,
     })
 }
 
@@ -1283,7 +1702,7 @@ pub fn open_browser(browser: &str, profile: &str) -> Result<(), String> {
     };
     let exe = app_path(exe_name).ok_or("That browser was not found.")?;
     let args: Vec<String> = if browser == "firefox" {
-        vec!["-P".into(), profile.to_string(), "-no-remote".into()]
+        vec!["-P".into(), profile.to_string()]
     } else {
         vec![format!("--profile-directory={}", profile)]
     };
@@ -1323,19 +1742,32 @@ pub fn overview() -> AccountsOverview {
     if let Some(steam) = steam_platform(&sys) {
         platforms.push(steam);
     }
+    if let Some(bnet) = bnet_platform(&sys) {
+        platforms.push(bnet);
+    }
     if let Ok(roots) = Roots::real() {
         for s in SPECS {
             let installed = launcher_exe(s.id).is_some();
-            let mut state = load_state(s.id).unwrap_or_default();
-            if !installed && state.profiles.is_empty() {
+            // An unreadable list is shown as an error and never written over.
+            let (mut state, error) = match load_state(s.id) {
+                Ok(state) => (state, None),
+                Err(e) => (PlatformState::default(), Some(e)),
+            };
+            if !installed && state.profiles.is_empty() && error.is_none() {
                 continue;
             }
             let mut no_login = Vec::new();
-            if s.id == "discord" {
+            if s.id == "discord" && error.is_none() {
                 // Skip while a switch is running; the next refresh catches up.
                 if let Ok(_guard) = LOCK.try_lock() {
+                    let without_id = |state: &PlatformState| {
+                        state.profiles.iter().filter(|p| p.identity.is_none()).count()
+                    };
+                    let before = without_id(&state);
                     no_login = check_saved_discord_logins(&mut state);
-                    let _ = save_state(s.id, &state);
+                    if without_id(&state) != before {
+                        let _ = save_state(s.id, &state);
+                    }
                 }
             }
             let identity = current_identity(s, &roots);
@@ -1376,6 +1808,7 @@ pub fn overview() -> AccountsOverview {
                 installed,
                 current: identity.map(|i| i.label).filter(|label| !label.is_empty()),
                 accounts,
+                error,
             });
         }
     }
@@ -1551,6 +1984,64 @@ mod tests {
         assert!(!ini_has_epic_login(b""));
         let utf16: Vec<u8> = "[RememberMe]\nData=abc\n".bytes().flat_map(|b| [b, 0]).collect();
         assert!(ini_has_epic_login(&utf16));
+    }
+
+    #[test]
+    fn epic_path_is_only_taken_from_a_real_launcher_command() {
+        let base = temp_case("epic-command");
+        let exe = base.join("EpicGamesLauncher.exe");
+        fs::write(&exe, "x").unwrap();
+        let other = base.join("other.exe");
+        fs::write(&other, "x").unwrap();
+        let quoted = |p: &Path| format!("\"{}\" \"%1\"", p.display());
+        assert_eq!(epic_exe_from_command(&quoted(&exe)), Some(exe.clone()));
+        assert!(epic_exe_from_command(&quoted(&other)).is_none());
+        assert!(epic_exe_from_command(&quoted(&base.join("gone").join("EpicGamesLauncher.exe"))).is_none());
+        assert!(epic_exe_from_command("EpicGamesLauncher.exe").is_none());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn battle_net_switch_only_reorders_the_remembered_names() {
+        let config: serde_json::Value = serde_json::from_str(
+            r#"{"Client":{"SavedAccountNames":"a@x.com, b@x.com,,c@x.com","Other":1}}"#,
+        )
+        .unwrap();
+        let names = bnet_names(&config);
+        assert_eq!(names, ["a@x.com", "b@x.com", "c@x.com"]);
+        assert_eq!(bnet_reordered(&names, Some("C@x.com")), "C@x.com,a@x.com,b@x.com");
+        assert_eq!(bnet_reordered(&names, Some("new@x.com")), "new@x.com,a@x.com,b@x.com,c@x.com");
+        assert_eq!(bnet_reordered(&names, None), "");
+        assert!(bnet_names(&serde_json::json!({})).is_empty());
+    }
+
+    #[test]
+    fn new_epic_launcher_identity_needs_a_display_name() {
+        let signed_in = r#"{"prod":{"account_info":{"display_name":"Player One","id":"abc123"}}}"#;
+        let identity = parse_epic_new_identity(signed_in).unwrap();
+        assert_eq!((identity.label.as_str(), identity.id.as_str()), ("Player One", "abc123"));
+        let no_id = parse_epic_new_identity(r#"{"prod":{"account_info":{"display_name":"P"}}}"#).unwrap();
+        assert_eq!(no_id.id, "name:P");
+        assert!(parse_epic_new_identity(r#"{"prod":{"account_info":{"display_name":" "}}}"#).is_none());
+        assert!(parse_epic_new_identity("{}").is_none());
+    }
+
+    #[test]
+    fn a_saved_credential_comes_back_exactly_and_is_removed_when_missing() {
+        let target = "NEXUS-test-credential";
+        let saved = SavedCred {
+            user: "tester".into(),
+            persist: 2,
+            blob: STANDARD.encode(b"not a real secret"),
+        };
+        let sealed = protect(&saved.to_bytes()).unwrap();
+        assert_ne!(sealed, saved.to_bytes());
+        let opened: SavedCred = serde_json::from_slice(&unprotect(&sealed).unwrap()).unwrap();
+        assert_eq!(opened, saved);
+        write_cred(target, &opened).unwrap();
+        assert_eq!(read_cred(target), Some(saved));
+        delete_cred(target);
+        assert_eq!(read_cred(target), None);
     }
 
     #[test]

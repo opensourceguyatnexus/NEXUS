@@ -49,6 +49,7 @@ pub struct DiskInfo {
     pub size: u64,
     pub health: String,
     pub is_boot: bool,
+    pub is_offline: bool,
     pub partitions: Vec<PartitionInfo>,
     pub free: Vec<FreeSpace>,
 }
@@ -68,6 +69,7 @@ struct RawDisk {
     size: u64,
     health: Option<String>,
     is_boot: bool,
+    is_offline: bool,
 }
 
 #[derive(Deserialize)]
@@ -131,7 +133,8 @@ pub fn list_disks() -> Result<Vec<DiskInfo>, String> {
     let script = r#"
 $disks = @(Get-Disk | ForEach-Object { [pscustomobject]@{
   number=[uint32]$_.Number; name=$_.FriendlyName; style=[string]$_.PartitionStyle;
-  bus=[string]$_.BusType; size=[uint64]$_.Size; health=[string]$_.HealthStatus; is_boot=[bool]$_.IsBoot } })
+  bus=[string]$_.BusType; size=[uint64]$_.Size; health=[string]$_.HealthStatus; is_boot=[bool]$_.IsBoot;
+  is_offline=[bool]$_.IsOffline } })
 $parts = @(Get-Partition | ForEach-Object {
   $v = $null; try { $v = $_ | Get-Volume -ErrorAction Stop } catch {}
   [pscustomobject]@{
@@ -203,6 +206,7 @@ $parts = @(Get-Partition | ForEach-Object {
                 size: d.size,
                 health: d.health.unwrap_or_default(),
                 is_boot: d.is_boot,
+                is_offline: d.is_offline,
                 partitions,
                 free,
             }
@@ -332,7 +336,7 @@ pub fn set_label(disk: u32, part: u32, label: String) -> Result<(), String> {
         return Err("Labels can be up to 32 characters and cannot contain quotes or ` $ * ? / \\ | < > :".into());
     }
     ps(&format!(
-        "{} Set-Volume -Partition $p -NewFileSystemLabel '{}'",
+        "{} $p | Get-Volume | Set-Volume -NewFileSystemLabel '{}'",
         guard(disk, part, false, None),
         label
     ))
@@ -383,13 +387,17 @@ pub fn create(disk: u32, offset: u64, size: u64, fs: String, label: String) -> R
         return Err("Windows can only format FAT32 up to 32 GB. Use exFAT or NTFS.".into());
     }
     // Align to 1 MB, the Windows default.
-    let offset = offset.div_ceil(MB) * MB;
-    let size = size / MB * MB;
+    let aligned = offset.div_ceil(MB) * MB;
+    let size = size.saturating_sub(aligned - offset) / MB * MB;
+    let offset = aligned;
     if size < MIN_GAP {
         return Err("The new partition must be at least 16 MB.".into());
     }
     ps(&format!(
-        "$d = Get-Disk -Number {disk}; if ($d.IsReadOnly) {{ throw 'This disk is read-only.' }} \
+        "$d = Get-Disk -Number {disk}; \
+         if ($d.IsOffline) {{ throw 'This disk is offline. Open Windows Disk Management, right-click the disk and choose Online, then press Refresh.' }} \
+         if ([string]$d.PartitionStyle -eq 'RAW') {{ throw 'This disk is not initialized. Open Windows Disk Management, right-click the disk and choose Initialize Disk, then press Refresh.' }} \
+         if ($d.IsReadOnly) {{ throw 'This disk is read-only.' }} \
          $n = New-Partition -DiskNumber {disk} -Offset {offset} -Size {size} -AssignDriveLetter; \
          try {{ Format-Volume -Partition $n -FileSystem {fs} -NewFileSystemLabel '{label}' -Confirm:$false | Out-Null }} \
          catch {{ $n | Remove-Partition -Confirm:$false; throw }}",

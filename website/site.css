@@ -307,6 +307,16 @@ footer {
 }
 
 @media (max-width: 900px) {
+  .top {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .top nav {
+    gap: 16px;
+  }
+  .top nav a {
+    font-size: 0.9375rem;
+  }
   .hero {
     grid-template-columns: 1fr;
     padding: 24px 0 48px;
